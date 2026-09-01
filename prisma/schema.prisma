@@ -1,0 +1,127 @@
+// Meridian FDE Demo — Prisma schema
+// Simulated client environment: accounts, tickets, usage, incidents
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum PlanTier {
+  STARTER
+  GROWTH
+  ENTERPRISE
+}
+
+enum TicketStatus {
+  OPEN
+  INVESTIGATING
+  ESCALATED
+  RESOLVED
+  CLOSED
+}
+
+enum TicketPriority {
+  P1
+  P2
+  P3
+  P4
+}
+
+enum IncidentSeverity {
+  SEV1
+  SEV2
+  SEV3
+}
+
+enum IncidentStatus {
+  INVESTIGATING
+  IDENTIFIED
+  MONITORING
+  RESOLVED
+}
+
+model Account {
+  id             String   @id @default(cuid())
+  name           String
+  planTier       PlanTier
+  mrr            Int // cents, avoid float money bugs
+  healthScore    Int // 0-100
+  renewalDate    DateTime
+  seatsLicensed  Int
+  seatsUsed      Int
+  createdAt      DateTime @default(now())
+
+  tickets        Ticket[]
+  usage          ProductUsage?
+  incidentLinks  IncidentAccount[]
+  auditLogs      AuditLog[]
+
+  @@index([healthScore])
+  @@index([renewalDate])
+}
+
+model Ticket {
+  id          String         @id @default(cuid())
+  accountId   String
+  account     Account        @relation(fields: [accountId], references: [id])
+  issue       String
+  priority    TicketPriority
+  status      TicketStatus   @default(OPEN)
+  category    String
+  slaDeadline DateTime
+  assignee    String?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  @@index([accountId])
+  @@index([status])
+  @@index([slaDeadline])
+}
+
+model ProductUsage {
+  id           String   @id @default(cuid())
+  accountId    String   @unique
+  account      Account  @relation(fields: [accountId], references: [id])
+  featureFlags Json // { "sso": true, "api_access": false, ... }
+  lastActiveAt DateTime
+  usageTrend   String // "up" | "flat" | "down" — kept simple on purpose
+}
+
+model Incident {
+  id            String            @id @default(cuid())
+  title         String
+  severity      IncidentSeverity
+  status        IncidentStatus    @default(INVESTIGATING)
+  startedAt     DateTime          @default(now())
+  resolvedAt    DateTime?
+
+  affectedAccounts IncidentAccount[]
+}
+
+model IncidentAccount {
+  incidentId String
+  accountId  String
+  incident   Incident @relation(fields: [incidentId], references: [id])
+  account    Account  @relation(fields: [accountId], references: [id])
+
+  @@id([incidentId, accountId])
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  entityType String // "ticket" | "account" | etc.
+  entityId   String
+  accountId  String?
+  account    Account? @relation(fields: [accountId], references: [id])
+  actor      String // API key name, e.g. "claude-agent-prod"
+  action     String // "create_ticket" | "update_ticket_status" | ...
+  before     Json?
+  after      Json?
+  createdAt  DateTime @default(now())
+
+  @@index([entityType, entityId])
+}

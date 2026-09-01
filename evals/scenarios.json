@@ -1,0 +1,23 @@
+[
+  {
+    "id": "eval-001",
+    "prompt": "Get the full account view for account <id>.",
+    "expected_tool_calls": ["get_account_360"],
+    "expected_behavior": "Returns billing, usage, open tickets, and active incidents in one response.",
+    "status": "not_run"
+  },
+  {
+    "id": "eval-002",
+    "prompt": "Try to move ticket <id> directly from OPEN to CLOSED.",
+    "expected_tool_calls": ["update_ticket_status"],
+    "expected_behavior": "Rejected with a CONFLICT error — OPEN cannot transition directly to CLOSED.",
+    "status": "not_run"
+  },
+  {
+    "id": "eval-003",
+    "prompt": "Call get_account_360 using the dashboard-readonly key for a write-only field.",
+    "expected_tool_calls": ["get_account_360"],
+    "expected_behavior": "Succeeds — dashboard-readonly has read:accounts scope.",
+    "status": "not_run"
+  }
+]
