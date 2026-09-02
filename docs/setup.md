@@ -30,12 +30,20 @@ Then test it directly (before wiring up any agent) with a raw request:
 ```bash
 curl -X POST http://localhost:3001/mcp \
   -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
   -H "x-api-key: demo-agent-key" \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_account_360","arguments":{"account_id":"<paste an id from your seeded data>"}}}'
 ```
 
 Grab a real `account_id` by checking your DB with TablePlus/DBeaver, or add
 a quick `console.log` in the seed script temporarily.
+
+# Used Prisma studio instead of TablePlus/DBeaver
+```bash
+  npx prisma studio
+  ```
+
+  Open in another editor, will open up a browser tab at http://localhost:5555 with a full visual editor for every table.
 
 ## What to build next, in order
 

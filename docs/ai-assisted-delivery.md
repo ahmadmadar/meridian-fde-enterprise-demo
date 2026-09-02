@@ -53,6 +53,17 @@ diff view), correct/redirect as needed, commit.
 > `MCP_KEY_DASHBOARD` aren't set, so auth fails closed instead of falling
 > back to a known value.
 
+> **Issue:** The documented curl test command (in `docs/setup.md`) was
+> missing the `Accept: application/json, text/event-stream` header. The
+> server's `StreamableHTTPServerTransport` requires the client to declare
+> it accepts both response formats — without it, the request fails before
+> reaching the tool logic.
+> **Caught by:** Manual testing — first curl attempt against `get_account_360`
+> didn't return a usable response until the header was added.
+> **Fix:** Added `-H "Accept: application/json, text/event-stream"` to the
+> curl command and updated `docs/setup.md` so the documented command works
+> as written for the next person (or future me) who runs it.
+
 ## Engagement log
 
 - **Day 1:** Scoped the four data domains and eight tools; decided against
@@ -63,6 +74,14 @@ diff view), correct/redirect as needed, commit.
 - **Day 1:** Reviewed `scopes.ts` before the first public push; caught that
   the fallback API key values were hardcoded into source rather than
   env-only. Removed the fallbacks and added a fail-closed startup check.
+- **Day 2:** Ran the first live end-to-end test of `get_account_360` via
+  curl. Initial request failed silently until adding an
+  `Accept: application/json, text/event-stream` header — required by the
+  streamable HTTP transport but missing from the original docs. Verified
+  the full response: cross-system join across billing, usage, open
+  tickets, and active incident data returned correctly for a seeded
+  Enterprise account. First fully working vertical slice confirmed:
+  auth → validation → Prisma query → joined result.
 
 ## Why this matters for the role
 
