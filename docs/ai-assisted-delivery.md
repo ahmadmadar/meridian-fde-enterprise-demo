@@ -122,7 +122,15 @@ diff view), correct/redirect as needed, commit.
   enforcement (valid key/wrong scope, no key), and bad input (nonexistent
   id, invalid enum). All five categories passed. Verified via Prisma
   Studio, not just the API response, that rejected transitions leave the
-  database and audit log completely untouched — confirms the
+  database and audit log completely untouched, confirms the
   `$transaction` wrapping and pre-write validation are both working as
   designed, not just returning correct-looking error messages.
+- **Day 3:** Set up a gitignored `prompts.txt` for standardized session
+  prompts (session initializer, end-of-session CLAUDE.md update, pre-commit
+  review). Reduces variance in Claude Code's output from re-phrasing the
+  same instructions differently each session and keeps the pre-commit
+  review step consistent. Kept out of version control since it's a
+  personal workflow aid, not project documentation; conventions that
+  emerge from it that are worth documenting get promoted into `CLAUDE.md`
+  directly.
 
