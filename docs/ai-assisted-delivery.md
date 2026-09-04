@@ -28,7 +28,7 @@ diff view), correct/redirect as needed, commit.
 - [ ] Vitest test scaffolding
 - [ ] README / docs first drafts
 
-## What required architectural decisions (yours, not generated)
+## What required architectural decisions
 
 - Data model shape: which four domains, and why `get_account_360` is the
   composite call rather than four separate lookups
@@ -40,7 +40,7 @@ diff view), correct/redirect as needed, commit.
   shared-package monorepo wasn't earning its keep for a two-deployable
   project
 
-## What Claude Code got wrong (and what that shows)
+## What Claude Code got wrong
 
 > **Issue:** `scopes.ts` had hardcoded fallback values (`|| "demo-agent-key"`,
 > `|| "demo-dashboard-key"`) for the API keys. Since this fallback lives in
@@ -64,6 +64,30 @@ diff view), correct/redirect as needed, commit.
 > curl command and updated `docs/setup.md` so the documented command works
 > as written for the next person (or future me) who runs it.
 
+> **Issue:** TypeScript compile errors across `update_ticket_status.ts`,
+> `get_account_360.ts`, and `server.ts`.
+> **Root cause:** `tsconfig.json` sets `"module": "NodeNext"` /
+> `"moduleResolution": "NodeNext"`, which requires relative imports to
+> carry the explicit runtime `.js` extension even in `.ts` source — Node's
+> native ESM resolver has no extension-inference step. All relative
+> imports in the starter code omitted the extension, producing TS2835
+> errors. Separately, `"strict": true` surfaced an implicit-`any` on the
+> `tx` parameter of a `prisma.$transaction(async (tx) => …)` callback in
+> `update_ticket_status.ts`, since Prisma's transaction-client type wasn't
+> being inferred and needed an explicit annotation.
+> **Caught by:** Claude Code (VS Code), running `npx tsc --noEmit` during
+> the session.
+> **Fix:** Added `.js` extensions to all relative imports in
+> `src/server.ts`, `src/tools/get_account_360.ts`, and
+> `src/tools/update_ticket_status.ts`. Imported `Prisma` from
+> `@prisma/client` and annotated the transaction callback as
+> `Prisma.TransactionClient` in `update_ticket_status.ts`.
+> **Verification:** `npx tsc --noEmit` — both files clean post-fix.
+> **Residual/out of scope:** `server.ts` has one remaining, unrelated type
+> error (SDK content-array literal-type mismatch on the `registerTool`
+> handler) — pre-existing, not touched by this fix, flagged for separate
+> follow-up.
+
 ## Engagement log
 
 - **Day 1:** Scoped the four data domains and eight tools; decided against
@@ -82,20 +106,23 @@ diff view), correct/redirect as needed, commit.
   tickets, and active incident data returned correctly for a seeded
   Enterprise account. First fully working vertical slice confirmed:
   auth → validation → Prisma query → joined result.
+- **Day 3:** Ran `npx tsc --noEmit` via Claude Code and caught a batch of
+  TypeScript errors across the tool files — missing `.js` extensions on
+  relative imports (required by `NodeNext` module resolution) and an
+  implicit-`any` on the Prisma transaction callback in
+  `update_ticket_status.ts`. Fixed both classes of error; confirmed clean
+  via a second `tsc` run. Left one pre-existing, unrelated SDK type
+  mismatch in `server.ts` untouched and flagged for later.
+- **Day 3:** Registered `update_ticket_status` in `server.ts`, following
+  the same registration pattern as `get_account_360` — schema, API key
+  extraction, handler, mapped errors. Import uses the explicit `.js`
+  extension per the NodeNext resolution fix made earlier today.
+- **Day 3:** Ran the full test suite against `update_ticket_status` —
+  legal transition, illegal transition, terminal-state exit, scope
+  enforcement (valid key/wrong scope, no key), and bad input (nonexistent
+  id, invalid enum). All five categories passed. Verified via Prisma
+  Studio, not just the API response, that rejected transitions leave the
+  database and audit log completely untouched — confirms the
+  `$transaction` wrapping and pre-write validation are both working as
+  designed, not just returning correct-looking error messages.
 
-## Why this matters for the role
-
-AI-assisted delivery isn't about typing less — it's about spending review
-and judgment time on what actually requires it (architecture, business
-rules, security boundaries) instead of boilerplate. That's the tradeoff a
-client-facing engineer manages constantly under real timelines, and this
-log makes that tradeoff visible rather than just claimed.
-
-## Positioning for LinkedIn / interviews
-
-- **README framing (above the fold):** *"Built using an AI-assisted
-  delivery workflow (Claude Code) — see docs/ai-assisted-delivery.md for
-  what was generated vs. architected."*
-- **LinkedIn framing:** lead with the delivery model, not just the tech.
-- **Interview readiness:** be ready to explain any line of code and debug
-  live — review everything generated so that's true by construction.

@@ -1,6 +1,6 @@
 # Architecture
 
-*(Fill in once the build stabilizes — a diagram plus a short write-up.)*
+*Will fill in once the build stabilizes*
 
 ## Overview
 
@@ -30,5 +30,11 @@ them through a single, authenticated, scope-controlled interface.
 
 ## Diagram
 
-*(Add an actual diagram image or Mermaid block here once the tool set is
-complete.)*
+## Notes
+
+- **Note:** invalid-enum input (e.g. an unrecognized `new_status` value)
+  is rejected by the MCP SDK's own schema validation before the tool
+  handler runs — it never reaches `mapErrorToToolResult()`. Business-logic
+  errors (`CONFLICT`, `NOT_FOUND`, `FORBIDDEN_SCOPE`) are caught and mapped
+  by our own code; schema-shape errors are caught one layer earlier, by
+  the SDK itself.

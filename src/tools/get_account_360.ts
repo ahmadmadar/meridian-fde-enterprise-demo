@@ -7,9 +7,9 @@
 // itself when the server can do that join once, correctly.
 
 import { z } from "zod";
-import { prisma } from "../db/client";
-import { authenticate, requireScope } from "../auth/scopes";
-import { logger } from "../logger";
+import { prisma } from "../db/client.js";
+import { authenticate, requireScope } from "../auth/scopes.js";
+import { logger } from "../logger.js";
 
 export const getAccountInputSchema = z.object({
   account_id: z.string().min(1, "account_id is required"),

@@ -9,15 +9,16 @@ import express from "express";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { ZodError } from "zod";
-import { getAccountInputSchema, getAccount360 } from "./tools/get_account_360";
-import { logger } from "./logger";
+import { getAccountInputSchema, getAccount360 } from "./tools/get_account_360.js";
+import { updateTicketStatusInputSchema, updateTicketStatus } from "./tools/update_ticket_status.js";
+import { logger } from "./logger.js";
 
 const server = new McpServer({ name: "meridian-ops", version: "0.1.0" });
 
 // --- Tool registration ---------------------------------------------------
-// Each additional tool (search_tickets, create_ticket, update_ticket_status,
-// check_incident_impact, get_renewal_risk, get_audit_log) follows this same
-// shape: zod schema in, auth+scope check, prisma query, mapped errors out.
+// Each additional tool (search_tickets, create_ticket, check_incident_impact,
+// get_renewal_risk, get_audit_log) follows this same shape: zod schema in,
+// auth+scope check, prisma query, mapped errors out.
 
 server.registerTool(
   "get_account_360",
@@ -30,6 +31,24 @@ server.registerTool(
     const apiKey = extra?.requestInfo?.headers?.["x-api-key"] as string | undefined;
     try {
       const result = await getAccount360(input, apiKey);
+      return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+    } catch (err) {
+      return mapErrorToToolResult(err);
+    }
+  }
+);
+
+server.registerTool(
+  "update_ticket_status",
+  {
+    description:
+      "Update a support ticket's status. Enforces the valid state machine (OPEN -> INVESTIGATING/CLOSED, INVESTIGATING -> ESCALATED/RESOLVED, ESCALATED -> RESOLVED, RESOLVED -> CLOSED) and rejects illegal transitions with a CONFLICT error.",
+    inputSchema: updateTicketStatusInputSchema.shape,
+  },
+  async (input, extra) => {
+    const apiKey = extra?.requestInfo?.headers?.["x-api-key"] as string | undefined;
+    try {
+      const result = await updateTicketStatus(input, apiKey);
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     } catch (err) {
       return mapErrorToToolResult(err);
