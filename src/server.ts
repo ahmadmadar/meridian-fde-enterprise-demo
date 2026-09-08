@@ -15,6 +15,7 @@ import { searchTicketsInputSchema, searchTickets } from "./tools/search_tickets.
 import { createTicketInputSchema, createTicket } from "./tools/create_ticket.js";
 import { checkIncidentImpactInputSchema, checkIncidentImpact } from "./tools/check_incident_impact.js";
 import { getRenewalRiskInputSchema, getRenewalRisk } from "./tools/get_renewal_risk.js";
+import { getAuditLogInputSchema, getAuditLog } from "./tools/get_audit_log.js";
 import { logger } from "./logger.js";
 
 const server = new McpServer({ name: "meridian-ops", version: "0.1.0" });
@@ -125,6 +126,24 @@ server.registerTool(
     const apiKey = extra?.requestInfo?.headers?.["x-api-key"] as string | undefined;
     try {
       const result = await getRenewalRisk(input, apiKey);
+      return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+    } catch (err) {
+      return mapErrorToToolResult(err);
+    }
+  }
+);
+
+server.registerTool(
+  "get_audit_log",
+  {
+    description:
+      "Search the audit log of every write operation (create_ticket, update_ticket_status), with before/after snapshots. Filter by entity_type, entity_id, account_id, actor, action, or since (ISO timestamp). Defaults to the most recent entries across everything if unfiltered. Requires the admin scope.",
+    inputSchema: getAuditLogInputSchema.shape,
+  },
+  async (input, extra) => {
+    const apiKey = extra?.requestInfo?.headers?.["x-api-key"] as string | undefined;
+    try {
+      const result = await getAuditLog(input, apiKey);
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     } catch (err) {
       return mapErrorToToolResult(err);

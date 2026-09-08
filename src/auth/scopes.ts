@@ -22,7 +22,7 @@ if (!process.env.MCP_KEY_AGENT || !process.env.MCP_KEY_DASHBOARD) {
 const API_KEYS: Record<string, ApiKeyRecord> = {
   [process.env.MCP_KEY_AGENT]: {
     name: "claude-agent-prod",
-    scopes: ["read:accounts", "read:tickets", "write:tickets", "read:incidents"],
+    scopes: ["read:accounts", "read:tickets", "write:tickets", "read:incidents", "admin"],
   },
   [process.env.MCP_KEY_DASHBOARD]: {
     name: "dashboard-readonly",

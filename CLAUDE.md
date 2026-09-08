@@ -152,9 +152,24 @@ Verified the default window, all three `risk_level` filter values against
 hand-computed expected sets, `within_days` override, `account_id` filter,
 and auth rejection. Both API keys carry `read:accounts`, so — same as
 `check_incident_impact` — there's no `FORBIDDEN_SCOPE` case to test for
-this tool. Remaining: `get_audit_log` — it now has real audit data to
-query against (`create_ticket`'s test pass wrote both ticket and audit
-rows).
+this tool. `get_audit_log` (read, list/search) is also done and
+verified — the seventh and final tool in the build order. Gated behind a
+new `admin` scope (added to `claude-agent-prod` only; `dashboard-readonly`
+does not have it) rather than reusing a domain read scope, since audit
+rows expose before/after mutation snapshots across every entity type.
+Filters: `entity_type`, `entity_id`, `account_id`, `actor`, `action`,
+`since`. No "active subset" default exists for immutable history the way
+`search_tickets` has ticket statuses — an unscoped call returns the most
+recent entries ordered `createdAt desc`, bounded by `limit`. This is the
+first tool where `FORBIDDEN_SCOPE` was actually testable (every prior
+read tool's scope was shared by both API keys). Verified all six filters
+against real audit data and confirmed the `scopes.ts` change didn't
+regress any existing tool.
+
+All seven planned tools are now built and verified:
+`get_account_360`, `update_ticket_status`, `search_tickets`,
+`create_ticket`, `check_incident_impact`, `get_renewal_risk`,
+`get_audit_log`.
 
 `TICKET_STATUSES`, `TICKET_PRIORITIES`, and `ACTIVE_TICKET_STATUSES` now
 live in `src/tools/constants.ts` (extracted once a third tool needed
@@ -174,5 +189,5 @@ API response shape but the actual DB/audit-log state via Prisma Studio
 (or a direct Prisma query) — especially for rejected writes, confirm
 nothing changed. For any list/search tool with a derived filter, verify
 the filter against hand-computed expected results, not just that it
-returns *something* plausible. Keep this bar for `get_audit_log` when
-it's built.
+returns *something* plausible. Keep this bar for any new tool added
+beyond the original seven.

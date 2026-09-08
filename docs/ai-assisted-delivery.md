@@ -30,7 +30,7 @@ diff view), correct/redirect as needed, commit.
   - [x] `create_ticket`
   - [x] `check_incident_impact`
   - [x] `get_renewal_risk`
-  - [ ] `get_audit_log`
+  - [x] `get_audit_log`
 - [x] Auth/scope middleware first draft
 - [ ] Vitest test scaffolding — `vitest` is a devDependency and `npm test`
       is wired in `package.json`, but no `vitest.config.*` or `*.test.ts`
@@ -126,6 +126,22 @@ diff view), correct/redirect as needed, commit.
   `search_tickets`'s `sla_risk` range-query treatment exists to prevent.
   Corrected before writing the implementation, not after testing caught
   it.
+- `get_audit_log`'s access model: confirmed with the user before
+  building rather than defaulting to an existing scope for convenience.
+  `scopes.ts`'s `Scope` type already included `"admin"` from the start,
+  but no key had ever been granted it — a signal the schema anticipated
+  a privileged-only tool. Rather than reuse `read:accounts` (which both
+  keys already carry, and would have made audit history as visible as
+  ordinary account data), added `admin` to `claude-agent-prod` only,
+  leaving `dashboard-readonly` unable to reach this tool at all. This is
+  the first genuine scope boundary between the two keys since
+  `write:tickets` — every prior read tool happened to be readable by
+  both.
+- `get_audit_log`'s unscoped-call default: no "active subset" concept
+  applies to immutable audit history the way it does to ticket status,
+  so the default is most-recent-N ordered `createdAt desc`, bounded by
+  `limit` — never an unbounded dump, but without inventing an
+  artificial status-like restriction that doesn't map onto the data.
 
 ## What Claude Code got wrong
 
@@ -379,4 +395,33 @@ diff view), correct/redirect as needed, commit.
   Same as `check_incident_impact`, both API keys carry the relevant read
   scope (`read:accounts`), so there's no `FORBIDDEN_SCOPE` case available
   to test for this tool.
+- **Day 4:** Ended the `get_renewal_risk` session and started a new one
+  for `get_audit_log` — the seventh and final planned tool.
+- **Day 4:** Walked through `get_audit_log`'s design before writing
+  code and surfaced two real decisions: what scope should gate it, and
+  what an unscoped call should default to. Noticed `scopes.ts`'s `Scope`
+  type already had an unused `"admin"` value — a leftover signal from
+  the original schema design that a privileged-only tool was anticipated
+  but never built. User confirmed granting `admin` to `claude-agent-prod`
+  only (not `dashboard-readonly`) rather than reusing an existing shared
+  scope, and confirmed the unscoped default should be most-recent-N
+  ordered desc rather than requiring a mandatory filter.
+- **Day 4:** Built `get_audit_log` — filters on `entity_type`,
+  `entity_id`, `account_id`, `actor`, `action`, `since`, all straight
+  Prisma `where` equality/range clauses, ordered `createdAt desc`. Added
+  `admin` to `claude-agent-prod`'s scope list in `scopes.ts`.
+- **Day 4:** Tested end-to-end against real audit data left over from
+  earlier sessions (one `create_ticket` row, one `update_ticket_status`
+  row). Verified the unscoped default (both entries, correctly ordered),
+  all six filters individually against the known rows, and — for the
+  first time since `write:tickets` — an actual testable
+  `FORBIDDEN_SCOPE` rejection: `dashboard-readonly` correctly rejected
+  for lacking `admin`, since every prior read tool happened to be
+  readable by both keys. Also ran a regression check on
+  `get_account_360` after the `scopes.ts` edit to confirm adding `admin`
+  to `claude-agent-prod` didn't change its existing behavior.
+- **Day 4:** All seven originally planned tools are now built and
+  verified: `get_account_360`, `update_ticket_status`, `search_tickets`,
+  `create_ticket`, `check_incident_impact`, `get_renewal_risk`,
+  `get_audit_log`.
 
