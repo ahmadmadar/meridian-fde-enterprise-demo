@@ -144,10 +144,17 @@ against the affected accounts' individual `mrr`), bad `incident_id` →
 `read:incidents`, so there's no key/scope combination to exercise a
 `FORBIDDEN_SCOPE` case for this tool. It reports account-level business
 exposure only — `Ticket` has no `incidentId`, so incidents and tickets
-aren't directly correlated in the schema. Remaining tools:
-`get_renewal_risk`, `get_audit_log` — build in that order, following the
-established pattern. `get_audit_log` now has real audit data to query
-against (`create_ticket`'s test pass wrote both ticket and audit rows).
+aren't directly correlated in the schema. `get_renewal_risk` (read,
+portfolio list) is also done and verified — lists accounts renewing
+within a window (default 90 days) with a derived `risk_level`
+(high/medium/low, from `healthScore < 50` and `usageTrend === "down"`).
+Verified the default window, all three `risk_level` filter values against
+hand-computed expected sets, `within_days` override, `account_id` filter,
+and auth rejection. Both API keys carry `read:accounts`, so — same as
+`check_incident_impact` — there's no `FORBIDDEN_SCOPE` case to test for
+this tool. Remaining: `get_audit_log` — it now has real audit data to
+query against (`create_ticket`'s test pass wrote both ticket and audit
+rows).
 
 `TICKET_STATUSES`, `TICKET_PRIORITIES`, and `ACTIVE_TICKET_STATUSES` now
 live in `src/tools/constants.ts` (extracted once a third tool needed
@@ -165,5 +172,7 @@ for the full writeup.
 Testing convention established: for any write tool, verify not just the
 API response shape but the actual DB/audit-log state via Prisma Studio
 (or a direct Prisma query) — especially for rejected writes, confirm
-nothing changed. Keep this bar for `check_incident_impact`,
-`get_renewal_risk`, and `get_audit_log` when they're built.
+nothing changed. For any list/search tool with a derived filter, verify
+the filter against hand-computed expected results, not just that it
+returns *something* plausible. Keep this bar for `get_audit_log` when
+it's built.

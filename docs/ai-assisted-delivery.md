@@ -29,7 +29,7 @@ diff view), correct/redirect as needed, commit.
   - [x] `search_tickets`
   - [x] `create_ticket`
   - [x] `check_incident_impact`
-  - [ ] `get_renewal_risk`
+  - [x] `get_renewal_risk`
   - [ ] `get_audit_log`
 - [x] Auth/scope middleware first draft
 - [ ] Vitest test scaffolding — `vitest` is a devDependency and `npm test`
@@ -104,6 +104,28 @@ diff view), correct/redirect as needed, commit.
   `accountId`. Correlating them would require guessing at a heuristic
   (e.g. tickets opened during the incident window) that isn't in the data
   model; left out rather than approximated.
+- `get_renewal_risk`'s scope and risk model: confirmed with the user
+  before building. Portfolio list (accounts renewing within a window),
+  not a single-account lookup — `account_id` is an optional narrowing
+  filter, same role it plays in `search_tickets`. Risk signals limited to
+  `healthScore < 50` and `usageTrend === "down"` (declined seat
+  utilization and open-ticket signals, to keep the first version
+  self-contained on `Account`/`ProductUsage`), combined into a
+  three-tier `high`/`medium`/`low` `risk_level` — `high` requires both
+  signals, `medium` exactly one, `low` neither — matching
+  `search_tickets`'s `breached`/`at_risk`/`ok` three-bucket precedent.
+  Default renewal window is 90 days (one quarter, standard CS
+  renewal-prep horizon), overridable via `within_days`.
+- `get_renewal_risk`'s `risk_level` filter is a real Prisma `where`
+  clause (nested `AND`/`OR` over `healthScore` and the related
+  `ProductUsage.usageTrend`), not computed in JS after fetching —
+  initially drafted it as a post-fetch JS filter, then caught during
+  design that applying it after Prisma's `take: limit` could silently
+  return fewer results than requested (or miss later-sorted matches) as
+  account volume grows, the same correctness concern
+  `search_tickets`'s `sla_risk` range-query treatment exists to prevent.
+  Corrected before writing the implementation, not after testing caught
+  it.
 
 ## What Claude Code got wrong
 
@@ -327,4 +349,34 @@ diff view), correct/redirect as needed, commit.
   combination available to exercise a `FORBIDDEN_SCOPE` rejection for
   this tool — noted, not treated as a gap). Read-only, so no Prisma
   Studio pass needed, consistent with `search_tickets`.
+- **Day 4:** Ended the `check_incident_impact` session and started a new
+  one for `get_renewal_risk`, per the one-tool-per-session rule now
+  written into `CLAUDE.md`.
+- **Day 4:** Walked through `get_renewal_risk`'s design before writing
+  code — two rounds of questions rather than one, since this tool had
+  more open decisions than prior ones: whether it should be a portfolio
+  list or single-account lookup, which signals count toward risk, the
+  health-score threshold, the default renewal window, and how signals
+  combine into a risk level. User confirmed each rather than any being
+  guessed.
+- **Day 4:** While translating the confirmed design into a query, caught
+  a correctness issue before writing the implementation: an initial
+  draft would have computed `risk_level` in JS after fetching a
+  `take: limit`-bounded result set, which could silently return fewer
+  results than requested (or miss later-sorted matches) once account
+  volume grows — the exact failure mode `search_tickets`'s `sla_risk`
+  range-query treatment was already established to prevent. Rebuilt
+  `risk_level` filtering as a real Prisma `where` clause (nested
+  `AND`/`OR` over `healthScore` and `ProductUsage.usageTrend`) before
+  implementing, not as a post-hoc fix.
+- **Day 4:** Built `get_renewal_risk` and tested end-to-end against
+  seeded data. Hand-computed the expected risk set from the DB directly
+  (7 accounts in the default 90-day window: 1 high, 2 medium, 4 low) and
+  confirmed the tool's `risk_level=high/medium/low` filters matched
+  exactly — verifying the actual `where`-clause logic, not just that
+  results looked plausible. Also verified the default window, the
+  `within_days` override, the `account_id` filter, and auth rejection.
+  Same as `check_incident_impact`, both API keys carry the relevant read
+  scope (`read:accounts`), so there's no `FORBIDDEN_SCOPE` case available
+  to test for this tool.
 
