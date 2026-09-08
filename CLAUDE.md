@@ -96,20 +96,38 @@ GitHub Desktop, not `gh` CLI. Branch per feature, PR template at
 ## Current build status
 
 `get_account_360` (read), `update_ticket_status` (write + state machine),
-and `search_tickets` (read, filtered list) are done and verified
-end-to-end via curl. `get_account_360` and `update_ticket_status` are
-fully tested — legal/illegal/terminal transitions, scope enforcement, and
-bad-input handling all confirmed against the actual database state, not
-just API responses. `search_tickets` is verified for each filter
-individually and in composition (`sla_risk`, `priority`, `category`,
-`status`, `account_id`, `limit`) plus validation and auth rejection —
-read-only, so no Prisma Studio pass needed. Remaining tools:
-`create_ticket`, `check_incident_impact`, `get_renewal_risk`,
-`get_audit_log` — build in that order, following the established
-pattern. `get_audit_log` should come after `create_ticket` so there's
-something in the audit log to query.
+`search_tickets` (read, filtered list), and `create_ticket` (write) are
+done and verified end-to-end via curl. `get_account_360` and
+`update_ticket_status` are fully tested — legal/illegal/terminal
+transitions, scope enforcement, and bad-input handling all confirmed
+against the actual database state, not just API responses.
+`search_tickets` is verified for each filter individually and in
+composition (`sla_risk`, `priority`, `category`, `status`, `account_id`,
+`limit`) plus validation and auth rejection — read-only, so no Prisma
+Studio pass needed. `create_ticket` is verified for valid create (SLA
+math confirmed directly, not just trusted), bad `account_id` →
+`NOT_FOUND`, invalid `priority` → rejected, and wrong-scope key →
+`FORBIDDEN_SCOPE`, with DB state confirmed via direct Prisma query that
+rejected calls wrote zero rows. Remaining tools: `check_incident_impact`,
+`get_renewal_risk`, `get_audit_log` — build in that order, following the
+established pattern. `get_audit_log` now has real audit data to query
+against (`create_ticket`'s test pass wrote both ticket and audit rows).
+
+`TICKET_STATUSES`, `TICKET_PRIORITIES`, and `ACTIVE_TICKET_STATUSES` now
+live in `src/tools/constants.ts` (extracted once a third tool needed
+them) — import from there rather than redeclaring locally in a new tool.
+
+Known gap, not yet fixed: the MCP SDK validates each tool's
+`inputSchema.shape` itself and returns a JSON-RPC `-32602` error before
+the handler runs, so `mapErrorToToolResult`'s `VALIDATION_ERROR` branch
+never actually fires for ordinary bad-input cases (missing fields, bad
+enum values) — confirmed across multiple tools, not tool-specific. Bad
+input is still rejected correctly with no DB writes; this only affects
+which error envelope the caller sees. See `docs/ai-assisted-delivery.md`
+for the full writeup.
 
 Testing convention established: for any write tool, verify not just the
-API response shape but the actual DB/audit-log state via Prisma Studio —
-especially for rejected writes, confirm nothing changed. Keep this bar
-for `create_ticket` when it's built.
+API response shape but the actual DB/audit-log state via Prisma Studio
+(or a direct Prisma query) — especially for rejected writes, confirm
+nothing changed. Keep this bar for `check_incident_impact`,
+`get_renewal_risk`, and `get_audit_log` when they're built.

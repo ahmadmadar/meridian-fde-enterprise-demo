@@ -12,6 +12,7 @@ import { ZodError } from "zod";
 import { getAccountInputSchema, getAccount360 } from "./tools/get_account_360.js";
 import { updateTicketStatusInputSchema, updateTicketStatus } from "./tools/update_ticket_status.js";
 import { searchTicketsInputSchema, searchTickets } from "./tools/search_tickets.js";
+import { createTicketInputSchema, createTicket } from "./tools/create_ticket.js";
 import { logger } from "./logger.js";
 
 const server = new McpServer({ name: "meridian-ops", version: "0.1.0" });
@@ -68,6 +69,24 @@ server.registerTool(
     const apiKey = extra?.requestInfo?.headers?.["x-api-key"] as string | undefined;
     try {
       const result = await searchTickets(input, apiKey);
+      return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+    } catch (err) {
+      return mapErrorToToolResult(err);
+    }
+  }
+);
+
+server.registerTool(
+  "create_ticket",
+  {
+    description:
+      "Create a new support ticket for an account. Status always starts OPEN; the SLA deadline is derived server-side from priority (P1=4h, P2=8h, P3=48h, P4=120h) rather than caller-supplied. Rejects unknown account_id with a NOT_FOUND error.",
+    inputSchema: createTicketInputSchema.shape,
+  },
+  async (input, extra) => {
+    const apiKey = extra?.requestInfo?.headers?.["x-api-key"] as string | undefined;
+    try {
+      const result = await createTicket(input, apiKey);
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     } catch (err) {
       return mapErrorToToolResult(err);

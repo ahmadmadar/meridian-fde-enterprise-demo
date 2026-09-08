@@ -27,7 +27,7 @@ diff view), correct/redirect as needed, commit.
   - [x] `get_account_360`
   - [x] `update_ticket_status`
   - [x] `search_tickets`
-  - [ ] `create_ticket`
+  - [x] `create_ticket`
   - [ ] `check_incident_impact`
   - [ ] `get_renewal_risk`
   - [ ] `get_audit_log`
@@ -67,6 +67,29 @@ diff view), correct/redirect as needed, commit.
   to active tickets (`OPEN`/`INVESTIGATING`/`ESCALATED`) rather than all
   tickets, matching the same default `get_account_360` already applies to
   its open-tickets include
+- `create_ticket`'s SLA policy: no SLA-hours policy existed anywhere in the
+  repo before this tool (the seed script just randomizes `slaDeadline`).
+  Settled with the user on a mid-market B2B SaaS support benchmark — P1=4h,
+  P2=8h, P3=48h, P4=120h — as flat wall-clock hours rather than
+  business-hours/timezone-aware, since the schema has no calendar concept
+  to hang that on. Encoded as `SLA_HOURS_BY_PRIORITY`, parallel to how
+  `ALLOWED_TRANSITIONS` encodes the ticket state machine.
+- `create_ticket` validates the `account_id` foreign key exists before
+  inserting, rather than letting a bad id surface as a raw Prisma
+  FK-constraint error — same NOT_FOUND-before-write pattern
+  `get_account_360` already uses for account lookups.
+- Extracted `TICKET_STATUSES`, `TICKET_PRIORITIES`, and
+  `ACTIVE_TICKET_STATUSES` into a shared `src/tools/constants.ts` once a
+  third tool (`create_ticket`) needed the same enums — `update_ticket_status.ts`
+  and `search_tickets.ts` were each independently duplicating the arrays.
+  Decided against extracting earlier (two duplicates was fine per
+  CLAUDE.md's anti-premature-abstraction guidance); three was the actual
+  trigger.
+- `Prisma.DbNull` vs. `Prisma.JsonNull` for the audit log's `before` field
+  on create: decided `DbNull` (a real SQL NULL) is the correct semantic
+  for "no prior state existed," not `JsonNull` (a stored JSON `null`
+  value) — `create_ticket` is the first write tool where `before` is
+  legitimately empty rather than a prior-status snapshot.
 
 ## What Claude Code got wrong
 
@@ -137,6 +160,29 @@ diff view), correct/redirect as needed, commit.
 > `category`, `status` override, `limit`, `account_id`, invalid-enum
 > rejection, and missing-API-key rejection all confirmed correct.
 
+> **Issue:** Discovered while testing `create_ticket`'s validation path
+> that schema-shape errors (missing required fields, invalid enum values)
+> never reach `mapErrorToToolResult`'s `ZodError` branch. The MCP SDK
+> validates each tool's `inputSchema.shape` itself before invoking the
+> handler, and short-circuits with a JSON-RPC `-32602` protocol error —
+> the handler's own `.parse()` call (and by extension our `VALIDATION_ERROR`
+> mapping) never runs for these cases.
+> **Caught by:** Manual curl testing during the `create_ticket` test pass —
+> an invalid `priority` value returned an `-32602` error instead of the
+> expected `{"error":{"code":"VALIDATION_ERROR",...}}` shape.
+> **Root cause confirmed, not introduced by this session:** reproduced the
+> identical `-32602` behavior against `update_ticket_status` with an
+> invalid `new_status` enum value — same SDK-level short-circuit, present
+> since the first tool was registered, not specific to `create_ticket`.
+> **Fix:** None applied — this isn't a bug; every tool still rejects bad
+> input cleanly with zero DB writes, just via a different error envelope
+> than `mapErrorToToolResult` produces. Documented as a known gap instead:
+> `VALIDATION_ERROR` in `mapErrorToToolResult` is currently near-dead code,
+> reachable only for `.parse()` failures the JSON-Schema conversion from a
+> Zod shape can't express (e.g. a future `.refine()`). Not fixed this
+> session — flagged for a decision later on whether callers should be able
+> to rely on one consistent error envelope for bad input.
+
 ## Engagement log
 
 - **Day 1:** Scoped the four data domains and seven tools; decided against
@@ -192,4 +238,45 @@ diff view), correct/redirect as needed, commit.
   `as const`, confirmed `tsc --noEmit` clean across all tools. Verified
   all filters end-to-end via curl against seeded data, including that the
   SLA-risk buckets partition exactly to the active-ticket count.
+- **Day 4:** Walked through `create_ticket`'s design before writing code.
+  Two things it needed beyond the established schema → auth → Prisma →
+  return pattern: validating the `account_id` foreign key exists before
+  insert (NOT_FOUND instead of a raw Prisma FK-constraint error), and
+  deriving `slaDeadline` server-side, since it's required by the schema
+  but had no encoded policy anywhere in the repo — the seed script just
+  randomizes it.
+- **Day 4:** Settled the SLA policy with the user rather than inventing
+  numbers unilaterally for audited business logic: mid-market B2B SaaS
+  support benchmark — P1=4h, P2=8h, P3=48h, P4=120h, flat wall-clock hours
+  (no business-hours/timezone calendar concept exists in this schema to
+  make it business-hours-aware).
+- **Day 4:** User flagged that `TICKET_STATUSES`/`TICKET_PRIORITIES` were
+  now duplicated as local consts in three tool files (`update_ticket_status.ts`,
+  `search_tickets.ts`, and the new `create_ticket.ts`). Extracted them into
+  `src/tools/constants.ts` along with `ACTIVE_TICKET_STATUSES`; refactored
+  the two existing tools to import instead of redeclaring. `tsc --noEmit`
+  confirmed clean post-refactor.
+- **Day 4:** Built `create_ticket` — account-existence check, SLA-deadline
+  derivation, ticket + audit log write inside one `$transaction`. Used
+  `Prisma.DbNull` (not `Prisma.JsonNull`) for the audit log's `before`
+  field, since "no prior state" on a create is a real SQL NULL, not a
+  stored JSON null value — first write tool where `before` is legitimately
+  empty rather than a prior-status snapshot.
+- **Day 4:** Ran the full test plan via curl + direct Prisma queries:
+  valid create (verified SLA math directly — P1's created-at-to-deadline
+  delta was exactly 4h), bad `account_id` → `NOT_FOUND`, invalid `priority`
+  enum → rejected, wrong-scope key (`dashboard-readonly`) → `FORBIDDEN_SCOPE`.
+  Confirmed via direct DB query, not just API responses, that the three
+  rejected calls wrote zero rows — ticket count held at 61 (60 seeded + the
+  one valid create) and the audit log holds exactly one new `create_ticket`
+  entry.
+- **Day 4:** The invalid-enum test surfaced a real, previously-undocumented
+  finding: the MCP SDK validates `inputSchema.shape` itself and returns a
+  JSON-RPC `-32602` error before the tool handler (and its `ZodError`
+  catch) ever runs. Reproduced identically on `update_ticket_status`,
+  confirming it's a pattern across every registered tool, not something
+  `create_ticket` introduced. Not a bug — bad input is still cleanly
+  rejected with no writes — but `VALIDATION_ERROR` in
+  `mapErrorToToolResult` is effectively dead code today. Documented as a
+  known gap rather than "fixed."
 

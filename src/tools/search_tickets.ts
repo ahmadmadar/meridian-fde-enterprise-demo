@@ -10,14 +10,9 @@ import { z } from "zod";
 import { prisma } from "../db/client.js";
 import { authenticate, requireScope } from "../auth/scopes.js";
 import { logger } from "../logger.js";
+import { TICKET_STATUSES, TICKET_PRIORITIES, ACTIVE_TICKET_STATUSES } from "./constants.js";
 
-const TICKET_STATUSES = ["OPEN", "INVESTIGATING", "ESCALATED", "RESOLVED", "CLOSED"] as const;
-const TICKET_PRIORITIES = ["P1", "P2", "P3", "P4"] as const;
 const SLA_RISK_LEVELS = ["breached", "at_risk", "ok"] as const;
-
-// Default status scope when the caller doesn't specify one — matches the
-// "open tickets" set get_account_360 includes by default.
-const ACTIVE_STATUSES = ["OPEN", "INVESTIGATING", "ESCALATED"] as const;
 
 const AT_RISK_WINDOW_MS = 24 * 60 * 60 * 1000; // 24h
 
@@ -41,7 +36,7 @@ export async function searchTickets(rawInput: unknown, apiKey: string | undefine
   const now = Date.now();
 
   const where: Record<string, unknown> = {
-    status: input.status ? input.status : { in: ACTIVE_STATUSES },
+    status: input.status ? input.status : { in: ACTIVE_TICKET_STATUSES },
   };
 
   if (input.account_id) where.accountId = input.account_id;

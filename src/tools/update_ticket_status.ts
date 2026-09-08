@@ -9,8 +9,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "../db/client.js";
 import { authenticate, requireScope } from "../auth/scopes.js";
 import { logger } from "../logger.js";
-
-const TICKET_STATUSES = ["OPEN", "INVESTIGATING", "ESCALATED", "RESOLVED", "CLOSED"] as const;
+import { TICKET_STATUSES } from "./constants.js";
 
 export const updateTicketStatusInputSchema = z.object({
   ticket_id: z.string().min(1, "ticket_id is required"),
