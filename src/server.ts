@@ -18,138 +18,151 @@ import { getRenewalRiskInputSchema, getRenewalRisk } from "./tools/get_renewal_r
 import { getAuditLogInputSchema, getAuditLog } from "./tools/get_audit_log.js";
 import { logger } from "./logger.js";
 
-const server = new McpServer({ name: "meridian-ops", version: "0.1.0" });
-
 // --- Tool registration ---------------------------------------------------
 // Each additional tool (search_tickets, create_ticket, check_incident_impact,
 // get_renewal_risk, get_audit_log) follows this same shape: zod schema in,
 // auth+scope check, prisma query, mapped errors out.
+//
+// Wrapped in a factory rather than built once at module scope: the
+// underlying SDK's Server.connect() throws if called on an instance
+// that's still connected to a previous transport, which only surfaces
+// under overlapping requests (a shared instance handled sequential
+// manual curl testing fine, but crashed under real/test concurrency).
+// StreamableHTTPServerTransport with sessionIdGenerator: undefined is
+// the SDK's stateless mode — a fresh server+transport pair per request
+// is the documented pattern for it, not a single long-lived instance.
 
-server.registerTool(
-  "get_account_360",
-  {
-    description:
-      "Get a full cross-system view of one account: billing, health, product usage, open tickets, and active incident exposure.",
-    inputSchema: getAccountInputSchema.shape,
-  },
-  async (input, extra) => {
-    const apiKey = extra?.requestInfo?.headers?.["x-api-key"] as string | undefined;
-    try {
-      const result = await getAccount360(input, apiKey);
-      return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
-    } catch (err) {
-      return mapErrorToToolResult(err);
-    }
-  }
-);
+function buildServer(): McpServer {
+  const server = new McpServer({ name: "meridian-ops", version: "0.1.0" });
 
-server.registerTool(
-  "update_ticket_status",
-  {
-    description:
-      "Update a support ticket's status. Enforces the valid state machine (OPEN -> INVESTIGATING/CLOSED, INVESTIGATING -> ESCALATED/RESOLVED, ESCALATED -> RESOLVED, RESOLVED -> CLOSED) and rejects illegal transitions with a CONFLICT error.",
-    inputSchema: updateTicketStatusInputSchema.shape,
-  },
-  async (input, extra) => {
-    const apiKey = extra?.requestInfo?.headers?.["x-api-key"] as string | undefined;
-    try {
-      const result = await updateTicketStatus(input, apiKey);
-      return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
-    } catch (err) {
-      return mapErrorToToolResult(err);
+  server.registerTool(
+    "get_account_360",
+    {
+      description:
+        "Get a full cross-system view of one account: billing, health, product usage, open tickets, and active incident exposure.",
+      inputSchema: getAccountInputSchema.shape,
+    },
+    async (input, extra) => {
+      const apiKey = extra?.requestInfo?.headers?.["x-api-key"] as string | undefined;
+      try {
+        const result = await getAccount360(input, apiKey);
+        return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+      } catch (err) {
+        return mapErrorToToolResult(err);
+      }
     }
-  }
-);
+  );
 
-server.registerTool(
-  "search_tickets",
-  {
-    description:
-      "Search support tickets across accounts, filtered by SLA risk (breached/at_risk/ok, at_risk = due within 24h), priority, category, status, or account. Defaults to active tickets (OPEN/INVESTIGATING/ESCALATED) unless a status is specified.",
-    inputSchema: searchTicketsInputSchema.shape,
-  },
-  async (input, extra) => {
-    const apiKey = extra?.requestInfo?.headers?.["x-api-key"] as string | undefined;
-    try {
-      const result = await searchTickets(input, apiKey);
-      return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
-    } catch (err) {
-      return mapErrorToToolResult(err);
+  server.registerTool(
+    "update_ticket_status",
+    {
+      description:
+        "Update a support ticket's status. Enforces the valid state machine (OPEN -> INVESTIGATING/CLOSED, INVESTIGATING -> ESCALATED/RESOLVED, ESCALATED -> RESOLVED, RESOLVED -> CLOSED) and rejects illegal transitions with a CONFLICT error.",
+      inputSchema: updateTicketStatusInputSchema.shape,
+    },
+    async (input, extra) => {
+      const apiKey = extra?.requestInfo?.headers?.["x-api-key"] as string | undefined;
+      try {
+        const result = await updateTicketStatus(input, apiKey);
+        return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+      } catch (err) {
+        return mapErrorToToolResult(err);
+      }
     }
-  }
-);
+  );
 
-server.registerTool(
-  "create_ticket",
-  {
-    description:
-      "Create a new support ticket for an account. Status always starts OPEN; the SLA deadline is derived server-side from priority (P1=4h, P2=8h, P3=48h, P4=120h) rather than caller-supplied. Rejects unknown account_id with a NOT_FOUND error.",
-    inputSchema: createTicketInputSchema.shape,
-  },
-  async (input, extra) => {
-    const apiKey = extra?.requestInfo?.headers?.["x-api-key"] as string | undefined;
-    try {
-      const result = await createTicket(input, apiKey);
-      return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
-    } catch (err) {
-      return mapErrorToToolResult(err);
+  server.registerTool(
+    "search_tickets",
+    {
+      description:
+        "Search support tickets across accounts, filtered by SLA risk (breached/at_risk/ok, at_risk = due within 24h), priority, category, status, or account. Defaults to active tickets (OPEN/INVESTIGATING/ESCALATED) unless a status is specified.",
+      inputSchema: searchTicketsInputSchema.shape,
+    },
+    async (input, extra) => {
+      const apiKey = extra?.requestInfo?.headers?.["x-api-key"] as string | undefined;
+      try {
+        const result = await searchTickets(input, apiKey);
+        return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+      } catch (err) {
+        return mapErrorToToolResult(err);
+      }
     }
-  }
-);
+  );
 
-server.registerTool(
-  "check_incident_impact",
-  {
-    description:
-      "Get the business impact of one incident: which accounts are affected and their revenue exposure (total MRR impacted, account count), plus each affected account's plan tier and health score.",
-    inputSchema: checkIncidentImpactInputSchema.shape,
-  },
-  async (input, extra) => {
-    const apiKey = extra?.requestInfo?.headers?.["x-api-key"] as string | undefined;
-    try {
-      const result = await checkIncidentImpact(input, apiKey);
-      return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
-    } catch (err) {
-      return mapErrorToToolResult(err);
+  server.registerTool(
+    "create_ticket",
+    {
+      description:
+        "Create a new support ticket for an account. Status always starts OPEN; the SLA deadline is derived server-side from priority (P1=4h, P2=8h, P3=48h, P4=120h) rather than caller-supplied. Rejects unknown account_id with a NOT_FOUND error.",
+      inputSchema: createTicketInputSchema.shape,
+    },
+    async (input, extra) => {
+      const apiKey = extra?.requestInfo?.headers?.["x-api-key"] as string | undefined;
+      try {
+        const result = await createTicket(input, apiKey);
+        return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+      } catch (err) {
+        return mapErrorToToolResult(err);
+      }
     }
-  }
-);
+  );
 
-server.registerTool(
-  "get_renewal_risk",
-  {
-    description:
-      "List accounts renewing within a window (default 90 days), each with a derived risk_level (high/medium/low) based on health score below 50 and a down usage trend. Filter by account_id, risk_level, or within_days.",
-    inputSchema: getRenewalRiskInputSchema.shape,
-  },
-  async (input, extra) => {
-    const apiKey = extra?.requestInfo?.headers?.["x-api-key"] as string | undefined;
-    try {
-      const result = await getRenewalRisk(input, apiKey);
-      return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
-    } catch (err) {
-      return mapErrorToToolResult(err);
+  server.registerTool(
+    "check_incident_impact",
+    {
+      description:
+        "Get the business impact of one incident: which accounts are affected and their revenue exposure (total MRR impacted, account count), plus each affected account's plan tier and health score.",
+      inputSchema: checkIncidentImpactInputSchema.shape,
+    },
+    async (input, extra) => {
+      const apiKey = extra?.requestInfo?.headers?.["x-api-key"] as string | undefined;
+      try {
+        const result = await checkIncidentImpact(input, apiKey);
+        return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+      } catch (err) {
+        return mapErrorToToolResult(err);
+      }
     }
-  }
-);
+  );
 
-server.registerTool(
-  "get_audit_log",
-  {
-    description:
-      "Search the audit log of every write operation (create_ticket, update_ticket_status), with before/after snapshots. Filter by entity_type, entity_id, account_id, actor, action, or since (ISO timestamp). Defaults to the most recent entries across everything if unfiltered. Requires the admin scope.",
-    inputSchema: getAuditLogInputSchema.shape,
-  },
-  async (input, extra) => {
-    const apiKey = extra?.requestInfo?.headers?.["x-api-key"] as string | undefined;
-    try {
-      const result = await getAuditLog(input, apiKey);
-      return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
-    } catch (err) {
-      return mapErrorToToolResult(err);
+  server.registerTool(
+    "get_renewal_risk",
+    {
+      description:
+        "List accounts renewing within a window (default 90 days), each with a derived risk_level (high/medium/low) based on health score below 50 and a down usage trend. Filter by account_id, risk_level, or within_days.",
+      inputSchema: getRenewalRiskInputSchema.shape,
+    },
+    async (input, extra) => {
+      const apiKey = extra?.requestInfo?.headers?.["x-api-key"] as string | undefined;
+      try {
+        const result = await getRenewalRisk(input, apiKey);
+        return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+      } catch (err) {
+        return mapErrorToToolResult(err);
+      }
     }
-  }
-);
+  );
+
+  server.registerTool(
+    "get_audit_log",
+    {
+      description:
+        "Search the audit log of every write operation (create_ticket, update_ticket_status), with before/after snapshots. Filter by entity_type, entity_id, account_id, actor, action, or since (ISO timestamp). Defaults to the most recent entries across everything if unfiltered. Requires the admin scope.",
+      inputSchema: getAuditLogInputSchema.shape,
+    },
+    async (input, extra) => {
+      const apiKey = extra?.requestInfo?.headers?.["x-api-key"] as string | undefined;
+      try {
+        const result = await getAuditLog(input, apiKey);
+        return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+      } catch (err) {
+        return mapErrorToToolResult(err);
+      }
+    }
+  );
+
+  return server;
+}
 
 // --- Error mapping ---------------------------------------------------------
 // Real integrations return structured, distinguishable errors — not a
@@ -182,6 +195,7 @@ const app = express();
 app.use(express.json());
 
 app.post("/mcp", async (req, res) => {
+  const server = buildServer();
   const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
   res.on("close", () => transport.close());
   await server.connect(transport);

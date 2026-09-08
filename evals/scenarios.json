@@ -8,9 +8,9 @@
   },
   {
     "id": "eval-002",
-    "prompt": "Try to move ticket <id> directly from OPEN to CLOSED.",
+    "prompt": "Try to move ticket <id> directly from OPEN to RESOLVED.",
     "expected_tool_calls": ["update_ticket_status"],
-    "expected_behavior": "Rejected with a CONFLICT error — OPEN cannot transition directly to CLOSED.",
+    "expected_behavior": "Rejected with a CONFLICT error — OPEN can only transition to INVESTIGATING or CLOSED, not directly to RESOLVED.",
     "status": "not_run"
   },
   {

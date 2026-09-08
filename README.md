@@ -32,6 +32,10 @@ See [`docs/setup.md`](docs/setup.md) for setup commands
 
 ## Status
 
-Early build — `get_account_360` is wired end-to-end; remaining tools
-(`search_tickets`, `create_ticket`, `update_ticket_status`,
-`check_incident_impact`, `get_renewal_risk`, `get_audit_log`) in progress.
+All seven planned tools are built and verified end-to-end against
+seeded data: `get_account_360`, `update_ticket_status`, `search_tickets`,
+`create_ticket`, `check_incident_impact`, `get_renewal_risk`, and
+`get_audit_log` (the last gated behind a dedicated `admin` scope, not a
+shared read scope). Not yet done: a deployed server, a live Claude
+Desktop connector run, and the companion dashboard (separate repo, not
+started).

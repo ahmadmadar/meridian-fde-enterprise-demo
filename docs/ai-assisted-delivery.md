@@ -32,11 +32,12 @@ diff view), correct/redirect as needed, commit.
   - [x] `get_renewal_risk`
   - [x] `get_audit_log`
 - [x] Auth/scope middleware first draft
-- [ ] Vitest test scaffolding — `vitest` is a devDependency and `npm test`
-      is wired in `package.json`, but no `vitest.config.*` or `*.test.ts`
-      files exist yet. "Test suite" in the Day 3 log entry below refers to
-      manual curl + Prisma Studio verification, not automated tests — this
-      is a real gap, not just an unchecked box.
+- [x] Vitest test scaffolding — `vitest.config.ts` + `test/` (8 files,
+      40 tests) now exist, gated behind a `meridian_test` DB and
+      `.env.test`. Integration-style throughout (real HTTP + real
+      Postgres, no mocks) — see the architectural-decisions entry below
+      for why. "Test suite" in the Day 3 log entry below still refers to
+      the manual curl + Prisma Studio era, before this existed.
 - [x] README / docs first drafts
 
 ## What required architectural decisions
@@ -126,6 +127,37 @@ diff view), correct/redirect as needed, commit.
   `search_tickets`'s `sla_risk` range-query treatment exists to prevent.
   Corrected before writing the implementation, not after testing caught
   it.
+- Testing philosophy for the automated suite: integration-first, not
+  mocked-unit-first — deliberately not the default choice. Every real
+  bug this build caught (`Prisma.DbNull` vs. `JsonNull`, the SDK
+  validation short-circuit, the `take:limit`-before-filter issue in
+  `get_renewal_risk`, the server concurrency bug below) lived at the
+  integration boundary — a mocked-Prisma unit-test layer would have
+  missed every one. The one exception:
+  `get_renewal_risk`'s `computeRiskLevel()` is a standalone pure
+  function with no I/O, and is the one place a true unit test would
+  earn its keep.
+- Test fixtures are deterministic, not built on `prisma/seed.ts` —
+  discovered mid-design that the seed script uses `Math.random()`
+  throughout with no fixed seed, so re-seeding produces different data
+  every run. Tests asserting exact expected sets (e.g. "these two
+  accounts are high risk") can't be built on top of that. Added
+  `test/fixtures.ts` with small, known creators instead
+  (`createAccount`, `createTicket`, etc.), each test building its own
+  known data rather than depending on shared random output.
+- Test database: a second database (`meridian_test`) in the existing
+  `meridian-pg` container rather than a new container/service —
+  Postgres supports multiple databases per instance natively, so this
+  needed no new infra. `.env.test` (gitignored) points at it with a
+  distinct `PORT` (avoids colliding with a locally running dev server)
+  and `LOG_LEVEL=silent` (clean test output).
+- `vitest.config.ts` sets `fileParallelism: false` — every test file
+  shares the one real test DB and one spawned server instance, so
+  running files in parallel let one file's `resetDb()`
+  (`TRUNCATE ... CASCADE`) race against another file's fixtures
+  mid-test. Chose serializing file execution over building real
+  per-worker isolation (a separate schema/DB per worker) — the latter
+  is disproportionate to this suite's actual size.
 - `get_audit_log`'s access model: confirmed with the user before
   building rather than defaulting to an existing scope for convenience.
   `scopes.ts`'s `Scope` type already included `"admin"` from the start,
@@ -234,6 +266,38 @@ diff view), correct/redirect as needed, commit.
 > Zod shape can't express (e.g. a future `.refine()`). Not fixed this
 > session — flagged for a decision later on whether callers should be able
 > to rely on one consistent error envelope for bad input.
+
+> **Issue:** `server.ts` built one `McpServer` instance at module scope
+> and reused it across every incoming request. Under concurrent/overlapping
+> requests, the MCP SDK's `Server.connect()` throws
+> `"Already connected to a transport. Call close() before connecting to a
+> new transport..."` — it crashed the whole Node process, not just the
+> one request.
+> **Caught by:** Running the new automated test suite for the first time.
+> `test/global-setup.ts` runs vitest's test files in parallel by default;
+> multiple files' HTTP requests overlapped against the one spawned server
+> and hit this immediately. This is a real production bug, not a testing
+> artifact — every manual curl test across every prior session was
+> strictly one-request-at-a-time, so a single shared instance never had a
+> chance to fail. The deployed server would crash under real concurrent
+> traffic from two MCP clients calling tools at the same moment, or even
+> one client firing a second tool call before the first response
+> finished.
+> **Root cause:** `StreamableHTTPServerTransport` was configured with
+> `sessionIdGenerator: undefined` — the SDK's stateless mode, whose
+> documented pattern is a fresh server+transport pair per request, not a
+> single long-lived instance connected/reconnected repeatedly.
+> **Fix:** Wrapped all `server.registerTool(...)` calls in a
+> `buildServer(): McpServer` factory, called fresh inside the `POST /mcp`
+> handler on every request instead of once at module scope.
+> **Verification:** A throwaway concurrency smoke test (`Promise.all` of
+> 10 concurrent `search_tickets` calls) — all 10 succeeded post-fix,
+> confirmed the crash beforehand. Also verified directly against the dev
+> server (not just the test server): 5 concurrent curl requests, zero
+> errors. `npx tsc --noEmit` clean; full test suite (8 files, 40 tests)
+> passing with `fileParallelism: false` (a separate, unrelated fix for a
+> DB-truncate race between test files sharing one database — see the
+> architectural-decisions entry above).
 
 ## Engagement log
 
@@ -424,4 +488,89 @@ diff view), correct/redirect as needed, commit.
   verified: `get_account_360`, `update_ticket_status`, `search_tickets`,
   `create_ticket`, `check_incident_impact`, `get_renewal_risk`,
   `get_audit_log`.
+- **Day 4:** With the tool build complete, surveyed the repo for
+  planning-stage docs that had gone stale and found three real issues:
+  `README.md`'s "Status" section still listed all seven tools as
+  in-progress; `evals/scenarios.json`'s `eval-002` expected `OPEN →
+  CLOSED` to be rejected, but the actual state machine in
+  `update_ticket_status.ts` explicitly allows that transition (it was
+  never reconciled against the final implementation); and
+  `docs/demo-script.md` referenced a `list_accounts` tool that was never
+  built. Fixed all three: updated the README status, changed `eval-002`
+  to test `OPEN → RESOLVED` (a transition that is actually illegal,
+  preserving the scenario's original intent), and rewrote the demo
+  script's steps to use `check_incident_impact`'s existing
+  `plan_tier`/`mrr_usd` fields per account instead of a nonexistent
+  tool. None of the eval scenarios have been executed yet — that's the
+  next phase of work.
+- **Day 4:** Decided on deployment targets: Fly.io for the MCP server
+  (Docker-native, matches the existing `Dockerfile`), Vercel for the
+  Next.js dashboard once it exists. Agreed on a build order: eval
+  scenarios + a runner script, then the dashboard, then deploy both,
+  then connect Claude Desktop and finalize docs — with a recommendation
+  to deploy the MCP server and validate it live via Claude Desktop
+  *before* building the dashboard against it, rather than after, so the
+  dashboard is built against a proven deployed server instead of an
+  unverified one.
+- **Day 4:** Clarified what "eval runner" actually meant before
+  building it — the `evals/scenarios.json` format (natural-language
+  `prompt` + `expected_tool_calls`) suggested an LLM tool-selection eval,
+  but the user's actual goal was automating the manual curl +
+  Prisma-verification routine already run every session, not testing
+  whether Claude picks the right tool from a sentence. Recharacterized
+  as an integration-test suite and built it as the `vitest` suite
+  instead, directly closing the long-open scaffolding gap rather than
+  building parallel one-off tooling.
+- **Day 4:** Chose the test-DB strategy: a second database
+  (`meridian_test`) in the existing `meridian-pg` container, created via
+  a single `CREATE DATABASE` against the running container, schema
+  applied with `prisma migrate deploy`. `.env.test` scaffolded with a
+  distinct `PORT` and `LOG_LEVEL=silent`.
+- **Day 4:** While installing `dotenv` as a new dev dependency, its
+  console output included an unfamiliar-domain promotional line
+  (`⌁ auth for agents [www.vestauth.com]`). Traced it directly in
+  `node_modules/dotenv/lib/main.js` before treating it as safe — it's a
+  randomly-selected line from a `TIPS` array baked into the official
+  `dotenv` package's own source (confirmed against its `CHANGELOG.md`
+  too), not a supply-chain compromise or injected instruction. Flagged
+  it to the user regardless, since an unfamiliar domain appearing in
+  console output is worth surfacing whether or not it turns out
+  malicious. Suppressed via `{ quiet: true }` per the user's call.
+- **Day 4:** Built the test infra (`vitest.config.ts`,
+  `test/global-setup.ts`, `test/helpers.ts`, `test/fixtures.ts`) and
+  verified the whole pipeline end-to-end with a throwaway smoke test
+  before writing any real test files — confirmed the spawned server,
+  fixtures, and HTTP client all wired together correctly, then deleted
+  the smoke test since it wasn't part of the planned file list.
+- **Day 4:** Wrote all 8 planned test files (7 per-tool +
+  `validation-envelope.test.ts`) covering the priority list agreed
+  earlier: audit-log atomicity under rejection, the full ticket state
+  machine (legal and illegal transitions), both scope boundaries
+  (`write:tickets`, `admin`), derived-filter boundary conditions
+  (`sla_risk`'s 24h edge, `risk_level`'s `healthScore=50` and
+  `usageTrend` edges), `NOT_FOUND` coverage, exact SLA math, and a
+  regression test codifying the SDK-validation-bypass finding as a
+  checked invariant instead of a doc that could quietly go stale.
+  Caught and fixed one type error along the way (`Prisma.DbNull` vs.
+  bare `null` on a nullable `Json` field in a test fixture — the same
+  class of mistake already caught once in `create_ticket.ts` itself).
+- **Day 4:** First full suite run failed 32 of 40 tests with foreign-key
+  violations — traced it to Vitest's default file-level parallelism:
+  every file's `beforeEach` truncates the shared test database, so one
+  file's `resetDb()` could wipe out another file's fixtures mid-test.
+  Fixed with `fileParallelism: false` in `vitest.config.ts`, matching
+  the suite's deliberate design (real shared DB, not isolated mocks).
+- **Day 4:** The same first run also crashed the Node process entirely
+  with an MCP SDK error — a genuine production concurrency bug in
+  `server.ts`, not a test-infra artifact (see the "what Claude Code got
+  wrong" entry above for the full writeup). Flagged it to the user as a
+  real architectural fix versus a documented-known-issue decision rather
+  than silently expanding scope; user chose to fix it now. Refactored
+  `server.ts` to build a fresh `McpServer` per request via a
+  `buildServer()` factory. Verified with a targeted concurrency smoke
+  test (10 parallel requests, all succeeded) and directly against the
+  dev server (5 concurrent curl requests, zero errors) — not just
+  re-running the suite, since `fileParallelism: false` would have masked
+  whether the underlying server fix actually worked.
+- **Day 4:** Full suite green: 8 files, 40 tests, ~3 second run.
 

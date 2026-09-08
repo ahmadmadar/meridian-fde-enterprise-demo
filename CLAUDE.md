@@ -72,6 +72,18 @@ repo, deployed independently. Don't reintroduce an `apps/` nesting.
   callback signature (`tsc --noEmit` catches it; `tsx`/`npm run dev` does
   not, since it transpiles without full type-checking). Always write
   `type: "text" as const` — see `mapErrorToToolResult()` in `server.ts`.
+- **Build a fresh `McpServer` per request — never a shared module-level
+  instance.** `server.ts`'s `POST /mcp` handler calls `buildServer()`
+  (which registers all tools and returns a new `McpServer`) on every
+  request. This was originally a single instance built once at module
+  scope; the underlying SDK's `Server.connect()` throws
+  ("Already connected to a transport") if called while still connected
+  to a previous request's transport, which only surfaces under
+  overlapping requests — sequential manual curl testing never triggered
+  it, but real concurrent traffic (or a parallel test suite) does.
+  `StreamableHTTPServerTransport` with `sessionIdGenerator: undefined`
+  is the SDK's stateless mode; a fresh server+transport pair per request
+  is the correct pattern for it. Don't revert to a shared instance.
 
 ## Version control
 
@@ -107,6 +119,41 @@ session. Each session follows this sequence:
 The exact prompt text for each step lives in a personal, gitignored
 `prompts.txt` at the repo root (not committed — see the Day 3 entry in
 `docs/ai-assisted-delivery.md`).
+
+## Automated tests
+
+`npm test` runs the `vitest` suite in `test/` — integration tests
+against the *real* running server and a *real* Postgres test database
+(`meridian_test`), not mocks. This was a deliberate choice: the bugs
+this build actually caught (`Prisma.DbNull` vs. `JsonNull`, the SDK
+validation short-circuit, the `take:limit`-before-filter correctness
+issue, the server concurrency bug below) all live at the integration
+boundary — a mocked-Prisma unit-test layer would have missed every one
+of them.
+
+- **Test files live in `test/`, not `src/`.** `tsconfig.json`'s
+  `include` is scoped to `src` only, so anything in `test/` is
+  automatically excluded from the production build/Docker image with no
+  extra config. Don't move test files into `src/tools/`.
+- **`test/fixtures.ts` provides deterministic fixture creators**
+  (`createAccount`, `createTicket`, `createProductUsage`,
+  `createIncident`, `resetDb`). `prisma/seed.ts` is randomized
+  (`Math.random()` throughout, no fixed seed) — fine for local dev data,
+  useless as a base for tests needing exact expected result sets. New
+  tests should use the fixtures, not depend on `prisma/seed.ts`'s
+  output.
+- **`vitest.config.ts` sets `fileParallelism: false`.** Every test file
+  shares the one real test DB and one spawned server instance; running
+  files in parallel causes one file's `resetDb()` (`TRUNCATE ... CASCADE`)
+  to race against another file's fixtures mid-test. Don't re-enable
+  parallelism without adding real per-worker isolation (a separate
+  schema/DB per worker) — that's a bigger investment than this suite's
+  size currently justifies.
+- **Setup requires `.env.test`** (gitignored, same shape as `.env`) and
+  a `meridian_test` database in the same Postgres container as dev
+  (`CREATE DATABASE meridian_test;`). `test/global-setup.ts` applies
+  migrations and spawns the server against it automatically — `npm test`
+  alone is the whole story once `.env.test` exists.
 
 ## Documentation habit — do this every session, not after
 
@@ -170,6 +217,49 @@ All seven planned tools are now built and verified:
 `get_account_360`, `update_ticket_status`, `search_tickets`,
 `create_ticket`, `check_incident_impact`, `get_renewal_risk`,
 `get_audit_log`.
+
+An automated `vitest` integration suite now covers all seven tools plus
+cross-cutting auth/validation checks — 8 test files, 40 tests, all
+passing (see "Automated tests" above for how to run it). Building it
+surfaced a real production bug, not just a testing gap: `server.ts`
+reused one module-level `McpServer` instance across every request,
+which crashes under overlapping requests (fixed via a per-request
+`buildServer()` factory — see "Hard technical conventions"). Manual
+curl testing every prior session was always strictly sequential, so
+this had no way to surface until the suite ran multiple requests
+concurrently. Verified the fix both via the suite (10 concurrent
+requests) and directly against the dev server (5 concurrent curl
+requests, zero errors).
+
+## Next steps
+
+Agreed build order (backend done, this is what's left):
+
+1. ~~Eval scenarios + runner scripts~~ — done as the `vitest` suite above,
+   after clarifying the actual goal was automating manual curl
+   verification, not an LLM tool-selection eval.
+2. **Next.js dashboard** — separate repo, not started. "Read-only + chat"
+   per `docs/architecture.md`'s one-line sketch, not yet fully scoped.
+   Key constraints already decided: the `dashboard-readonly` API key
+   must stay server-side only (Next.js API routes/server components),
+   never reach the browser; `get_audit_log` is out of reach for this
+   dashboard since `dashboard-readonly` deliberately lacks `admin`.
+   Recommend building the read-only screens (renewal-risk portfolio
+   view, incidents, tickets, account drill-down) before the chat
+   feature, which is a materially bigger scope jump (the dashboard
+   backend becomes its own MCP client running an agent loop).
+3. **Deploy** — Fly.io for this MCP server (Docker-native, matches the
+   existing `Dockerfile`), Vercel for the dashboard once built.
+4. **Connect Claude Desktop** to the deployed server and run
+   `docs/demo-script.md` live — recommended to do this right after
+   step 3's server deploy, *before* building the dashboard, so the
+   dashboard is built against a proven-working deployed server instead
+   of an unverified one. Still unverified as of this writing — every
+   test so far has been against `localhost`.
+5. **Finalize docs** — `README.md`, `docs/architecture.md` (still a
+   stub — "*Will fill in once the build stabilizes*", empty diagram
+   section), and `docs/ai-assisted-delivery.md`'s engagement log, once
+   the dashboard and both deployments actually exist to describe.
 
 `TICKET_STATUSES`, `TICKET_PRIORITIES`, and `ACTIVE_TICKET_STATUSES` now
 live in `src/tools/constants.ts` (extracted once a third tool needed
