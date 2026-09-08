@@ -125,19 +125,26 @@ The exact prompt text for each step lives in a personal, gitignored
 ## Current build status
 
 `get_account_360` (read), `update_ticket_status` (write + state machine),
-`search_tickets` (read, filtered list), and `create_ticket` (write) are
-done and verified end-to-end via curl. `get_account_360` and
-`update_ticket_status` are fully tested — legal/illegal/terminal
-transitions, scope enforcement, and bad-input handling all confirmed
-against the actual database state, not just API responses.
-`search_tickets` is verified for each filter individually and in
-composition (`sla_risk`, `priority`, `category`, `status`, `account_id`,
-`limit`) plus validation and auth rejection — read-only, so no Prisma
-Studio pass needed. `create_ticket` is verified for valid create (SLA
-math confirmed directly, not just trusted), bad `account_id` →
-`NOT_FOUND`, invalid `priority` → rejected, and wrong-scope key →
-`FORBIDDEN_SCOPE`, with DB state confirmed via direct Prisma query that
-rejected calls wrote zero rows. Remaining tools: `check_incident_impact`,
+`search_tickets` (read, filtered list), `create_ticket` (write), and
+`check_incident_impact` (read, composite lookup) are done and verified
+end-to-end via curl. `get_account_360` and `update_ticket_status` are
+fully tested — legal/illegal/terminal transitions, scope enforcement, and
+bad-input handling all confirmed against the actual database state, not
+just API responses. `search_tickets` is verified for each filter
+individually and in composition (`sla_risk`, `priority`, `category`,
+`status`, `account_id`, `limit`) plus validation and auth rejection —
+read-only, so no Prisma Studio pass needed. `create_ticket` is verified
+for valid create (SLA math confirmed directly, not just trusted), bad
+`account_id` → `NOT_FOUND`, invalid `priority` → rejected, and
+wrong-scope key → `FORBIDDEN_SCOPE`, with DB state confirmed via direct
+Prisma query that rejected calls wrote zero rows. `check_incident_impact`
+is verified for a valid `incident_id` (hand-checked `total_mrr_impacted_usd`
+against the affected accounts' individual `mrr`), bad `incident_id` →
+`NOT_FOUND`, and bogus API key → `UNAUTHORIZED`; both API keys carry
+`read:incidents`, so there's no key/scope combination to exercise a
+`FORBIDDEN_SCOPE` case for this tool. It reports account-level business
+exposure only — `Ticket` has no `incidentId`, so incidents and tickets
+aren't directly correlated in the schema. Remaining tools:
 `get_renewal_risk`, `get_audit_log` — build in that order, following the
 established pattern. `get_audit_log` now has real audit data to query
 against (`create_ticket`'s test pass wrote both ticket and audit rows).

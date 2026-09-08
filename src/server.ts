@@ -13,6 +13,7 @@ import { getAccountInputSchema, getAccount360 } from "./tools/get_account_360.js
 import { updateTicketStatusInputSchema, updateTicketStatus } from "./tools/update_ticket_status.js";
 import { searchTicketsInputSchema, searchTickets } from "./tools/search_tickets.js";
 import { createTicketInputSchema, createTicket } from "./tools/create_ticket.js";
+import { checkIncidentImpactInputSchema, checkIncidentImpact } from "./tools/check_incident_impact.js";
 import { logger } from "./logger.js";
 
 const server = new McpServer({ name: "meridian-ops", version: "0.1.0" });
@@ -87,6 +88,24 @@ server.registerTool(
     const apiKey = extra?.requestInfo?.headers?.["x-api-key"] as string | undefined;
     try {
       const result = await createTicket(input, apiKey);
+      return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+    } catch (err) {
+      return mapErrorToToolResult(err);
+    }
+  }
+);
+
+server.registerTool(
+  "check_incident_impact",
+  {
+    description:
+      "Get the business impact of one incident: which accounts are affected and their revenue exposure (total MRR impacted, account count), plus each affected account's plan tier and health score.",
+    inputSchema: checkIncidentImpactInputSchema.shape,
+  },
+  async (input, extra) => {
+    const apiKey = extra?.requestInfo?.headers?.["x-api-key"] as string | undefined;
+    try {
+      const result = await checkIncidentImpact(input, apiKey);
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     } catch (err) {
       return mapErrorToToolResult(err);

@@ -28,7 +28,7 @@ diff view), correct/redirect as needed, commit.
   - [x] `update_ticket_status`
   - [x] `search_tickets`
   - [x] `create_ticket`
-  - [ ] `check_incident_impact`
+  - [x] `check_incident_impact`
   - [ ] `get_renewal_risk`
   - [ ] `get_audit_log`
 - [x] Auth/scope middleware first draft
@@ -90,6 +90,20 @@ diff view), correct/redirect as needed, commit.
   for "no prior state existed," not `JsonNull` (a stored JSON `null`
   value) — `create_ticket` is the first write tool where `before` is
   legitimately empty rather than a prior-status snapshot.
+- `check_incident_impact`'s scope and metrics: confirmed with the user
+  before building rather than guessing. Scoped to a single `incident_id`
+  lookup (matching `get_account_360`'s composite-lookup shape) rather than
+  a list/search over all active incidents. Impact metrics limited to
+  `account_count` and `total_mrr_impacted_usd` — deliberately did not add
+  an `enterprise_count` or a health-score-based "at risk" bucket, since no
+  health-score threshold exists anywhere else in the codebase and
+  inventing one for an aggregate would be an unreviewed policy call.
+- `check_incident_impact` reports account-level impact only, not a
+  ticket correlation — the schema has no `incidentId` on `Ticket`, so
+  incidents and tickets are only indirectly related via shared
+  `accountId`. Correlating them would require guessing at a heuristic
+  (e.g. tickets opened during the incident window) that isn't in the data
+  model; left out rather than approximated.
 
 ## What Claude Code got wrong
 
@@ -279,4 +293,38 @@ diff view), correct/redirect as needed, commit.
   rejected with no writes — but `VALIDATION_ERROR` in
   `mapErrorToToolResult` is effectively dead code today. Documented as a
   known gap rather than "fixed."
+- **Day 4:** Formalized the session workflow itself into `CLAUDE.md` (new
+  "Session workflow" section) after noticing it had been followed
+  implicitly across every session without being written down anywhere
+  repo-visible — one tool per session, design walkthrough before code,
+  end-to-end testing including DB-state verification, doc updates before
+  ending the session, commit via GitHub Desktop. The exact prompt text per
+  step stays in the gitignored `prompts.txt`; the workflow itself now
+  lives here since `prompts.txt` isn't committed and wouldn't exist for a
+  collaborator or a future session on a different machine.
+- **Day 4:** Walked through `check_incident_impact`'s design before
+  writing code and surfaced two real decisions rather than guessing:
+  whether it should take a single `incident_id` (matching
+  `get_account_360`'s shape) or list across all active incidents, and
+  which impact metrics to compute. User confirmed single-`incident_id`
+  lookup, and `account_count` + `total_mrr_impacted_usd` as the only
+  aggregates — explicitly declined an `enterprise_count` or a
+  health-score-based risk bucket to avoid inventing an unreviewed
+  threshold.
+- **Day 4:** Built `check_incident_impact` — composite lookup joining
+  `Incident` → `IncidentAccount` → `Account`, read-only (no
+  `$transaction`/audit write needed, same category as `get_account_360`
+  and `search_tickets`). Noted but didn't build: incidents and tickets
+  have no direct schema relationship (`Ticket` has no `incidentId`), so
+  the tool reports account-level business exposure only, not a ticket
+  correlation.
+- **Day 4:** Tested end-to-end via curl against seeded data: valid
+  `incident_id` (hand-verified the `total_mrr_impacted_usd` sum against
+  the six affected accounts' individual `mrr` values — matched exactly),
+  bad `incident_id` → `NOT_FOUND`, bogus API key → `UNAUTHORIZED`, and
+  confirmed the `dashboard-readonly` key succeeds (both API keys carry
+  `read:incidents`, so unlike `write:tickets` there's no key/scope
+  combination available to exercise a `FORBIDDEN_SCOPE` rejection for
+  this tool — noted, not treated as a gap). Read-only, so no Prisma
+  Studio pass needed, consistent with `search_tickets`.
 
