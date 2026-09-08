@@ -79,6 +79,35 @@ GitHub Desktop, not `gh` CLI. Branch per feature, PR template at
 `.github/PULL_REQUEST_TEMPLATE.md`, conventional commit format
 (`feat:`, `fix:`, `docs:`, `test:`) in the commit summary field.
 
+## Session workflow
+
+One tool per Claude Code session — don't build multiple tools in a single
+session. Each session follows this sequence:
+
+1. **Start**: read this file first.
+2. **Design walkthrough before code**: for any new tool, walk through the
+   plan before writing it — schema, auth/scope, the Prisma shape, error
+   cases, return shape. If the tool needs a real business-logic decision
+   not already established here (an SLA policy, a state machine, a scope
+   boundary), surface it as a question rather than inventing it
+   unilaterally — audited business logic (see "Writes get audited" above)
+   shouldn't be an unreviewed guess.
+3. **Implement**, following the reference pattern in "Hard technical
+   conventions" above.
+4. **Test end-to-end** — not just the API response shape. For write
+   tools, verify actual DB/audit-log state (Prisma Studio or a direct
+   Prisma query), including that rejected/invalid calls write zero rows.
+5. **Update docs before ending the session**: "Current build status"
+   below, and `docs/ai-assisted-delivery.md` (architectural decisions,
+   engagement log, and a "what got caught" entry if something was wrong
+   and fixed).
+6. **Commit via GitHub Desktop** — conventional commit summary, concise
+   description; see "Version control" above.
+
+The exact prompt text for each step lives in a personal, gitignored
+`prompts.txt` at the repo root (not committed — see the Day 3 entry in
+`docs/ai-assisted-delivery.md`).
+
 ## Documentation habit — do this every session, not after
 
 - `docs/ai-assisted-delivery.md` — log what you (Claude Code) generated,
