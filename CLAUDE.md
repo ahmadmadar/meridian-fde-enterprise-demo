@@ -52,6 +52,26 @@ repo, deployed independently. Don't reintroduce an `apps/` nesting.
   `INVESTIGATING → ESCALATED/RESOLVED`, `ESCALATED → RESOLVED`,
   `RESOLVED → CLOSED`, `CLOSED` terminal. Enforce server-side; reject
   anything else with `CONFLICT`.
+- **Derived/computed filters become range queries, not in-memory
+  filtering.** When a tool filters on a value that isn't a stored column
+  (e.g. `search_tickets`'s `sla_risk`, derived from `slaDeadline` vs.
+  `now()`), translate it into a Prisma `where` clause (a date range, here)
+  rather than fetching broadly and filtering in JS — it has to stay
+  correct and fast at real ticket volume, not just against a small seeded
+  set. See `search_tickets.ts`.
+- **List/search tools default to the active subset, not the full table.**
+  An unscoped list/search call (e.g. `search_tickets` with no `status`
+  filter) returns the active rows (`OPEN`/`INVESTIGATING`/`ESCALATED` for
+  tickets) unless the caller passes an explicit filter that overrides it —
+  matches the default `get_account_360`'s open-tickets include already
+  uses. Don't default to returning every row regardless of status.
+- **MCP tool content literals need `as const` on `type`.** A bare
+  `content: [{ type: "text", ... }]` returned from a function with no
+  explicit return type gets `type` widened from the literal `"text"` to
+  `string` under `strict: true`, which fails the MCP SDK's `registerTool`
+  callback signature (`tsc --noEmit` catches it; `tsx`/`npm run dev` does
+  not, since it transpiles without full type-checking). Always write
+  `type: "text" as const` — see `mapErrorToToolResult()` in `server.ts`.
 
 ## Version control
 
@@ -75,15 +95,19 @@ GitHub Desktop, not `gh` CLI. Branch per feature, PR template at
 
 ## Current build status
 
-`get_account_360` (read) and `update_ticket_status` (write + state
-machine) are done, verified end-to-end via curl, and fully tested —
-legal/illegal/terminal transitions, scope enforcement, and bad-input
-handling all confirmed against the actual database state, not just API
-responses. Remaining tools: `search_tickets`, `create_ticket`,
-`check_incident_impact`, `get_renewal_risk`, `get_audit_log` — build in
-that order, following the established pattern. `get_audit_log` should
-come after `create_ticket` so there's something in the audit log to
-query.
+`get_account_360` (read), `update_ticket_status` (write + state machine),
+and `search_tickets` (read, filtered list) are done and verified
+end-to-end via curl. `get_account_360` and `update_ticket_status` are
+fully tested — legal/illegal/terminal transitions, scope enforcement, and
+bad-input handling all confirmed against the actual database state, not
+just API responses. `search_tickets` is verified for each filter
+individually and in composition (`sla_risk`, `priority`, `category`,
+`status`, `account_id`, `limit`) plus validation and auth rejection —
+read-only, so no Prisma Studio pass needed. Remaining tools:
+`create_ticket`, `check_incident_impact`, `get_renewal_risk`,
+`get_audit_log` — build in that order, following the established
+pattern. `get_audit_log` should come after `create_ticket` so there's
+something in the audit log to query.
 
 Testing convention established: for any write tool, verify not just the
 API response shape but the actual DB/audit-log state via Prisma Studio —

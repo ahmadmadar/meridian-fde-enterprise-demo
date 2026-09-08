@@ -11,6 +11,7 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { ZodError } from "zod";
 import { getAccountInputSchema, getAccount360 } from "./tools/get_account_360.js";
 import { updateTicketStatusInputSchema, updateTicketStatus } from "./tools/update_ticket_status.js";
+import { searchTicketsInputSchema, searchTickets } from "./tools/search_tickets.js";
 import { logger } from "./logger.js";
 
 const server = new McpServer({ name: "meridian-ops", version: "0.1.0" });
@@ -56,6 +57,24 @@ server.registerTool(
   }
 );
 
+server.registerTool(
+  "search_tickets",
+  {
+    description:
+      "Search support tickets across accounts, filtered by SLA risk (breached/at_risk/ok, at_risk = due within 24h), priority, category, status, or account. Defaults to active tickets (OPEN/INVESTIGATING/ESCALATED) unless a status is specified.",
+    inputSchema: searchTicketsInputSchema.shape,
+  },
+  async (input, extra) => {
+    const apiKey = extra?.requestInfo?.headers?.["x-api-key"] as string | undefined;
+    try {
+      const result = await searchTickets(input, apiKey);
+      return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+    } catch (err) {
+      return mapErrorToToolResult(err);
+    }
+  }
+);
+
 // --- Error mapping ---------------------------------------------------------
 // Real integrations return structured, distinguishable errors — not a
 // generic 500 — so the calling agent (and a human debugging it later) can
@@ -77,7 +96,7 @@ function mapErrorToToolResult(err: unknown) {
 
   return {
     isError: true,
-    content: [{ type: "text", text: JSON.stringify({ error: { code, message } }) }],
+    content: [{ type: "text" as const, text: JSON.stringify({ error: { code, message } }) }],
   };
 }
 

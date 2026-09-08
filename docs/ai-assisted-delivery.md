@@ -20,25 +20,53 @@ diff view), correct/redirect as needed, commit.
 
 ## What Claude Code generated
 
-- [ ] Prisma schema first draft
-- [ ] Seed script for mock Meridian data
-- [ ] MCP tool boilerplate (registration, Zod validation)
-- [ ] Individual tool implementations (list per tool as built)
-- [ ] Auth/scope middleware first draft
-- [ ] Vitest test scaffolding
-- [ ] README / docs first drafts
+- [x] Prisma schema first draft
+- [x] Seed script for mock Meridian data
+- [x] MCP tool boilerplate (registration, Zod validation)
+- Individual tool implementations:
+  - [x] `get_account_360`
+  - [x] `update_ticket_status`
+  - [x] `search_tickets`
+  - [ ] `create_ticket`
+  - [ ] `check_incident_impact`
+  - [ ] `get_renewal_risk`
+  - [ ] `get_audit_log`
+- [x] Auth/scope middleware first draft
+- [ ] Vitest test scaffolding — `vitest` is a devDependency and `npm test`
+      is wired in `package.json`, but no `vitest.config.*` or `*.test.ts`
+      files exist yet. "Test suite" in the Day 3 log entry below refers to
+      manual curl + Prisma Studio verification, not automated tests — this
+      is a real gap, not just an unchecked box.
+- [x] README / docs first drafts
 
 ## What required architectural decisions
 
-- Data model shape: which four domains, and why `get_account_360` is the
-  composite call rather than four separate lookups
+- Data model shape: which four domains, why `get_account_360` is the
+  composite call rather than four separate lookups, and dropping a fifth
+  "billing history" domain to keep the demo scope tight
 - Ticket state machine: allowed transitions, and why illegal transitions
   return `CONFLICT` instead of silently succeeding
 - Auth scope design: `read:*` vs `write:*` vs `admin`, and which tools
   require which scope
+- Audit logging design: every mutating tool writes its `AuditLog` entry
+  inside the same `$transaction` as the mutation, not as a separate call —
+  so a rejected write can never leave a partial or inconsistent audit
+  trail. Verified, not just implemented: Day 3 testing confirmed via
+  Prisma Studio that an illegal transition leaves both the ticket row and
+  the audit log completely untouched.
 - Repo structure: flat root instead of a monorepo — decided a
   shared-package monorepo wasn't earning its keep for a two-deployable
   project
+- SLA risk as a derived-not-stored field: `search_tickets`'s
+  `breached`/`at_risk`/`ok` filter isn't a column — decided to translate
+  it into a `where`-clause date range rather than fetch-and-filter in JS,
+  so it stays queryable at real ticket volume, with the 24h "at risk"
+  window as a named, callable-out default rather than a buried magic
+  number
+- Default status scope for `search_tickets`: an unscoped search defaults
+  to active tickets (`OPEN`/`INVESTIGATING`/`ESCALATED`) rather than all
+  tickets, matching the same default `get_account_360` already applies to
+  its open-tickets include
 
 ## What Claude Code got wrong
 
@@ -88,9 +116,30 @@ diff view), correct/redirect as needed, commit.
 > handler) — pre-existing, not touched by this fix, flagged for separate
 > follow-up.
 
+> **Issue:** `mapErrorToToolResult()` in `server.ts` returned
+> `content: [{ type: "text", text: ... }]` with no contextual type
+> annotation, so TypeScript widened `type` from the literal `"text"` to
+> `string`. This silently broke all three `registerTool` handlers
+> (`get_account_360`, `update_ticket_status`, and the new
+> `search_tickets`) against `tsc --noEmit`, since the MCP SDK's callback
+> signature requires the literal `"text"`. It went unnoticed because
+> `npm run dev` runs through `tsx`, which transpiles but doesn't
+> full-typecheck.
+> **Caught by:** `npx tsc --noEmit`, run while building `search_tickets` —
+> this was the item flagged as a residual follow-up in the Day 3 entry
+> above.
+> **Fix:** Added `as const` to the `type: "text"` literal in
+> `mapErrorToToolResult`'s return (`server.ts`).
+> **Verification:** `npx tsc --noEmit` clean across all three tools.
+> `search_tickets` also verified end-to-end via curl against seeded data —
+> default active-status scope, `sla_risk` (breached/at_risk/ok,
+> partitioning exactly to the active-ticket total), `priority`,
+> `category`, `status` override, `limit`, `account_id`, invalid-enum
+> rejection, and missing-API-key rejection all confirmed correct.
+
 ## Engagement log
 
-- **Day 1:** Scoped the four data domains and eight tools; decided against
+- **Day 1:** Scoped the four data domains and seven tools; decided against
   a fifth "billing history" domain to keep the demo tight.
 - **Day 1:** Reconciled repo structure — dropped the initial monorepo plan
   (`apps/mcp-server` + `apps/dashboard`) in favor of a flat root for the
@@ -133,4 +182,14 @@ diff view), correct/redirect as needed, commit.
   personal workflow aid, not project documentation; conventions that
   emerge from it that are worth documenting get promoted into `CLAUDE.md`
   directly.
+- **Day 4:** Built `search_tickets` — filters by `sla_risk` (derived from
+  `slaDeadline`, not a stored column; translated into a `where` range
+  rather than filtered in-memory so it stays queryable at volume),
+  `priority`, `category`, `status`, and `account_id`, defaulting to
+  active tickets (OPEN/INVESTIGATING/ESCALATED) when no status is given.
+  Registering it as a third `registerTool` caller surfaced the
+  `type: "text"` widening bug flagged as a Day 3 residual; fixed with
+  `as const`, confirmed `tsc --noEmit` clean across all tools. Verified
+  all filters end-to-end via curl against seeded data, including that the
+  SLA-risk buckets partition exactly to the active-ticket count.
 
