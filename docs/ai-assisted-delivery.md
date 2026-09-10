@@ -356,6 +356,26 @@ diff view), correct/redirect as needed, commit.
 > Adding a `list_active_incidents` tool is deferred to its own future
 > session; see "Next steps" in `CLAUDE.md`.
 
+> **Issue:** After redeploying `list_active_incidents` to Render, the
+> first live demo attempt in Claude Desktop reproduced the exact same
+> "which incident should I check?" gap the tool was built to close,
+> even though the tool was confirmed registered on the server.
+> **Caught by:** Running the demo line live in Claude Desktop
+> immediately after the redeploy.
+> **Root cause:** Claude Desktop's `mcp-remote` bridge process was
+> already running from a prior session, connected before the
+> redeploy. It never refetched the server's tool list after
+> `list_active_incidents` went live, so the model genuinely had no
+> such tool available to call.
+> **Fix:** Fully quit and relaunched Claude Desktop, forcing
+> `mcp-remote` to reconnect and refetch the current tool list. Reran
+> the demo line; it worked immediately.
+> **Verification:** Full expected chain ran end to end:
+> `list_active_incidents` found the one active SEV2 incident,
+> `check_incident_impact` and `search_tickets` narrowed to the single
+> at-risk Enterprise ticket, and the model drafted a usable escalation
+> unprompted.
+
 ## Engagement log
 
 - **Day 1:** Scoped the four data domains and seven tools; decided against
@@ -724,4 +744,16 @@ diff view), correct/redirect as needed, commit.
   `list_active_incidents` as the first step instead of assuming the
   model already knows the incident, closing the gap the live demo run
   surfaced earlier today.
+- **Day 6:** Ran the demo line for real in Claude Desktop against the
+  redeployed server. First attempt hit the exact "which incident?" gap
+  again, even with `list_active_incidents` already live server-side,
+  because Claude Desktop's `mcp-remote` bridge had connected before
+  the redeploy and was holding a stale tool list. Restarting Claude
+  Desktop fixed it.
+- **Day 6:** Reran the demo line after the restart and it worked
+  correctly: `list_active_incidents` found the one active SEV2,
+  narrowed to the single Enterprise account with an at-risk P1
+  ticket, and produced a usable escalation draft. Demo script's
+  original discovery gap is closed and verified live, not just via
+  curl.
 

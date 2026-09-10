@@ -298,8 +298,17 @@ Agreed build order (backend done, this is what's left):
    `incident_id` into `check_incident_impact`. Updated
    `docs/demo-script.md` to call it as the first step instead of
    assuming the model already knows the incident, and covered it with
-   5 new vitest tests. See "Current build status" for the full
-   verification list.
+   5 new vitest tests. Verified live in a real Claude Desktop
+   conversation against the redeployed server, not just curl. See
+   "Current build status" for the full verification list.
+   **Operational note:** the first live attempt reproduced the exact
+   gap this tool was built to close, even though the tool was already
+   registered on the redeployed server, since the `mcp-remote` bridge
+   process was still running from before the redeploy and hadn't
+   refetched the tool list. Fully quitting and relaunching Claude
+   Desktop fixed it. Recurring gotcha, not one-time: restart Claude
+   Desktop after every future tool deploy before assuming it isn't
+   working.
 5. **Next.js dashboard** — separate repo, not started. "Read-only + chat"
    per `docs/architecture.md`'s one-line sketch, not yet fully scoped.
    Key constraints already decided: the `dashboard-readonly` API key
