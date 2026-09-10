@@ -194,6 +194,10 @@ function mapErrorToToolResult(err: unknown) {
 const app = express();
 app.use(express.json());
 
+app.get("/health", (_req, res) => {
+  res.status(200).json({ status: "ok" });
+});
+
 app.post("/mcp", async (req, res) => {
   const server = buildServer();
   const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });

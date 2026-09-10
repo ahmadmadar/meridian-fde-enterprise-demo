@@ -218,6 +218,24 @@ All seven planned tools are now built and verified:
 `create_ticket`, `check_incident_impact`, `get_renewal_risk`,
 `get_audit_log`.
 
+Deployment prep for Render is done, not yet executed. The Dockerfile's
+`CMD` now runs `npx prisma migrate deploy && npm run start` on every
+boot (previously a bare `npm run start`), since the free tier has no
+Shell access to run migrations manually later. A `GET /health` route
+was added to `server.ts` for Render's health check, since previously
+only `POST /mcp` existed. Both changes were verified with a full local
+`docker build` + `docker run` smoke test: booting against an
+already-migrated DB correctly logged "No pending migrations to
+apply," and booting against a freshly created empty DB correctly
+applied migration `20260901194204_init` before the server started
+listening. A `render.yaml` Blueprint was added declaring the web
+service (Docker runtime, free plan, `/health` check) and a free
+Postgres instance, with `MCP_KEY_AGENT` and `MCP_KEY_DASHBOARD` marked
+`sync: false` so real key values are entered directly in Render's
+dashboard and never touch the repo. Actual Render account setup,
+Blueprint apply, and key generation are still pending as of this
+writing.
+
 An automated `vitest` integration suite now covers all seven tools plus
 cross-cutting auth/validation checks — 8 test files, 40 tests, all
 passing (see "Automated tests" above for how to run it). Building it
@@ -248,8 +266,18 @@ Agreed build order (backend done, this is what's left):
    view, incidents, tickets, account drill-down) before the chat
    feature, which is a materially bigger scope jump (the dashboard
    backend becomes its own MCP client running an agent loop).
-3. **Deploy** — Fly.io for this MCP server (Docker-native, matches the
-   existing `Dockerfile`), Vercel for the dashboard once built.
+3. **Deploy** — Render (Docker-runtime web service on the free tier,
+   matches the existing `Dockerfile`) for this MCP server, Vercel for
+   the dashboard once built. Switched from the originally planned
+   Fly.io after checking Fly's actual free-tier terms: a 2-hour/7-day
+   trial that then requires a card on file. Render's free web service
+   (750 hrs/month) and free Postgres need none. **Operational note:**
+   Render's free Postgres instance expires 30-90 days after creation
+   (confirm the exact current window in Render's dashboard). When it
+   does, the database is gone and must be recreated and re-seeded
+   (`npm run db:seed` against the new instance) from scratch. This is
+   a recurring maintenance item, not a one-time setup cost, so check
+   the instance's age before assuming demo data still exists.
 4. **Connect Claude Desktop** to the deployed server and run
    `docs/demo-script.md` live — recommended to do this right after
    step 3's server deploy, *before* building the dashboard, so the

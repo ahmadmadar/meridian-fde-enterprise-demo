@@ -71,3 +71,43 @@ ESCALATED     -> RESOLVED
 RESOLVED      -> CLOSED
 CLOSED        -> (terminal)
 ```
+
+## Deploying to Render
+
+The MCP server deploys via the `render.yaml` Blueprint at the repo
+root — it declares a Docker-runtime web service (free plan, `/health`
+check) and a free Postgres instance.
+
+1. Push `render.yaml` (and any pending server changes) to `main`.
+2. In the Render dashboard: **New → Blueprint**, select this
+   repo/branch, review the resource preview, then **Apply**.
+3. Render provisions Postgres first, then builds the web service from
+   the `Dockerfile`. Schema migrations run automatically on boot
+   (`npx prisma migrate deploy` is baked into the container `CMD`) —
+   no manual migration step needed.
+4. Fill in `MCP_KEY_AGENT` and `MCP_KEY_DASHBOARD` — these are
+   `sync: false` in the blueprint, so Render prompts for them directly
+   rather than reading a value from the file. Generate real values
+   with `openssl rand -hex 32`, save them in a password manager (not
+   any repo file, gitignored or not), and paste with no surrounding
+   quotes or trailing newline.
+5. Seed data once, manually — the free tier has no Shell access, so
+   this runs from your machine against the database's **External
+   Connection String** (Postgres service → Info tab):
+   ```bash
+   DATABASE_URL="<external connection string>" npm run db:seed
+   ```
+6. Verify:
+   ```bash
+   curl https://<your-service>.onrender.com/health
+   curl -X POST https://<your-service>.onrender.com/mcp \
+     -H "Content-Type: application/json" \
+     -H "Accept: application/json, text/event-stream" \
+     -H "x-api-key: <your MCP_KEY_AGENT value>" \
+     -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}'
+   ```
+
+**Free-tier caveats:** the web service spins down after 15 minutes
+idle and cold-starts (~30-60s) on the next request. The free Postgres
+instance expires 30-90 days after creation and needs recreating +
+re-seeding when it does — see the note in `CLAUDE.md`.

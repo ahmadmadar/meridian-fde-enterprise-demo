@@ -39,6 +39,8 @@ diff view), correct/redirect as needed, commit.
       for why. "Test suite" in the Day 3 log entry below still refers to
       the manual curl + Prisma Studio era, before this existed.
 - [x] README / docs first drafts
+- [x] Render deployment config: Dockerfile CMD update for
+      migrate-on-boot, `GET /health` endpoint, `render.yaml` Blueprint
 
 ## What required architectural decisions
 
@@ -174,6 +176,26 @@ diff view), correct/redirect as needed, commit.
   so the default is most-recent-N ordered `createdAt desc`, bounded by
   `limit` — never an unbounded dump, but without inventing an
   artificial status-like restriction that doesn't map onto the data.
+- Deployment platform: switched from Fly.io to Render partway through,
+  after checking Fly's actual free-tier terms (a short trial requiring
+  a card afterward) against Render's free web service and Postgres,
+  which need no card. A better fit for a portfolio project with no
+  revenue behind it.
+- Migration strategy for the deployed container: chose to run
+  `prisma migrate deploy` as part of the Dockerfile's boot command
+  rather than Render's separate Pre-Deploy Command feature. Kept the
+  approach portable across hosting platforms and avoided depending on
+  a feature whose free-tier behavior couldn't be confirmed ahead of
+  time. Trade-off accepted: a broken migration can now take down a
+  live restart, not just block a pending deploy.
+- Secret generation and storage for the two deployed API keys:
+  `openssl rand -hex 32` for both `MCP_KEY_AGENT` and
+  `MCP_KEY_DASHBOARD`, entered directly into Render's dashboard
+  (marked `sync: false` in `render.yaml` so the file never carries
+  real values) and recorded in a password manager rather than any
+  repo file, gitignored or not. Local `.env` keeps its existing
+  placeholder values since there is no real exposure to defend
+  against there.
 
 ## What Claude Code got wrong
 
@@ -573,4 +595,36 @@ diff view), correct/redirect as needed, commit.
   re-running the suite, since `fileParallelism: false` would have masked
   whether the underlying server fix actually worked.
 - **Day 4:** Full suite green: 8 files, 40 tests, ~3 second run.
+- **Day 5:** Switched deployment target from Fly.io to Render after
+  checking Fly's free tier terms more carefully. It's a short trial
+  that requires a card afterward; Render's free web service and
+  Postgres need none, a better fit for this project. No code cleanup
+  was needed for the switch. Searched the repo and confirmed the only
+  Fly references were the two doc mentions above.
+- **Day 5:** Found a gap while planning the Render blueprint: the
+  Dockerfile only ran the server, nothing applied database
+  migrations, and the existing `db:migrate` script (`prisma migrate
+  dev`) is interactive and unusable in a container. Render's free
+  tier also has no Shell access to run migrations after deploy.
+  Changed the Dockerfile `CMD` to run `prisma migrate deploy` before
+  the server starts, choosing that over Render's Pre-Deploy Command
+  feature since it stays portable across platforms and I couldn't
+  confirm its free-tier behavior on Render ahead of time.
+- **Day 5:** Verified the Dockerfile change with a full local
+  `docker build` and run before trusting it to a real deploy. Tested
+  against an already-migrated database (correctly skipped) and a
+  freshly created empty one (correctly applied the init migration
+  before the server started). Also added a `GET /health` route, since
+  the server only had `POST /mcp` before, needed for Render's health
+  check.
+- **Day 5:** Added `render.yaml` declaring the web service and a free
+  Postgres instance. Marked `MCP_KEY_AGENT` and `MCP_KEY_DASHBOARD` as
+  `sync: false` so real key values get entered directly in Render's
+  dashboard, never in the file. Walked through Render's env var
+  security model and key-generation approach with Claude Code before
+  generating anything: `openssl rand -hex 32` for both keys, stored in
+  a password manager rather than any file in the repo. Local `.env`
+  keeps its existing placeholder values, no need to change those.
+- **Day 5:** Deployment prep is done and locally verified. Render
+  account setup and the actual deploy are next.
 

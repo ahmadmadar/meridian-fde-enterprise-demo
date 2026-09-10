@@ -30,6 +30,21 @@ them through a single, authenticated, scope-controlled interface.
 
 ## Diagram
 
+## Deployment
+
+The MCP server deploys to **Render** as a Docker-runtime web service on
+the free tier, provisioned declaratively via the `render.yaml`
+Blueprint at the repo root, alongside a free Render Postgres instance.
+Schema migrations run automatically on container boot (`prisma migrate
+deploy` is part of the Dockerfile `CMD`), since the free tier has no
+Shell access to run them after the fact. A `GET /health` endpoint
+exists solely for Render's health check and carries no business logic.
+
+Originally planned for Fly.io; switched to Render because Fly's free
+tier is a short (2hr/7-day) trial requiring a card afterward, while
+Render's free web service and Postgres need none. The dashboard, once
+built, deploys to Vercel — a separate repo, unaffected by this choice.
+
 ## Notes
 
 - **Note:** invalid-enum input (e.g. an unrecognized `new_status` value)

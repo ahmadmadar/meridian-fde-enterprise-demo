@@ -1,0 +1,23 @@
+databases:
+  - name: meridian-pg
+    plan: free
+    databaseName: meridian
+    user: meridian
+
+services:
+  - type: web
+    name: meridian-mcp-server
+    runtime: docker
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: meridian-pg
+          property: connectionString
+      - key: MCP_KEY_AGENT
+        sync: false
+      - key: MCP_KEY_DASHBOARD
+        sync: false
+      - key: LOG_LEVEL
+        value: info
