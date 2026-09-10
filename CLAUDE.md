@@ -218,23 +218,24 @@ All seven planned tools are now built and verified:
 `create_ticket`, `check_incident_impact`, `get_renewal_risk`,
 `get_audit_log`.
 
-Deployment prep for Render is done, not yet executed. The Dockerfile's
-`CMD` now runs `npx prisma migrate deploy && npm run start` on every
-boot (previously a bare `npm run start`), since the free tier has no
-Shell access to run migrations manually later. A `GET /health` route
-was added to `server.ts` for Render's health check, since previously
-only `POST /mcp` existed. Both changes were verified with a full local
-`docker build` + `docker run` smoke test: booting against an
-already-migrated DB correctly logged "No pending migrations to
-apply," and booting against a freshly created empty DB correctly
-applied migration `20260901194204_init` before the server started
-listening. A `render.yaml` Blueprint was added declaring the web
-service (Docker runtime, free plan, `/health` check) and a free
-Postgres instance, with `MCP_KEY_AGENT` and `MCP_KEY_DASHBOARD` marked
-`sync: false` so real key values are entered directly in Render's
-dashboard and never touch the repo. Actual Render account setup,
-Blueprint apply, and key generation are still pending as of this
-writing.
+Deployment to Render is done and verified end to end, not just
+prepped. The Render account was created and the GitHub repo connected,
+the `render.yaml` Blueprint was applied (Postgres provisioned first,
+then the Docker-runtime web service built with migrate-on-boot already
+working from the local smoke test done in prep), and real
+`MCP_KEY_AGENT`/`MCP_KEY_DASHBOARD` values were generated with
+`openssl rand -hex 32` and entered directly in Render's dashboard,
+never in the repo. The live Postgres was seeded once via its external
+connection string. Both `GET /health` and an authenticated
+`POST /mcp` `tools/list` call return 200 against the deployed URL.
+Claude Desktop is connected to the deployed server and the demo
+script's tool chain ran live and worked: `check_incident_impact` ->
+`get_account_360`, filtered to Enterprise tier, sorted by MRR, with a
+correct escalation draft produced. See "Next steps" for a real gap
+this surfaced (no tool lets the model discover the active incident on
+its own) and the Claude Desktop config workaround needed
+(`mcp-remote`, since this installed Desktop version only accepts
+stdio `command`/`args` entries).
 
 An automated `vitest` integration suite now covers all seven tools plus
 cross-cutting auth/validation checks — 8 test files, 40 tests, all
@@ -256,7 +257,33 @@ Agreed build order (backend done, this is what's left):
 1. ~~Eval scenarios + runner scripts~~ — done as the `vitest` suite above,
    after clarifying the actual goal was automating manual curl
    verification, not an LLM tool-selection eval.
-2. **Next.js dashboard** — separate repo, not started. "Read-only + chat"
+2. ~~Deploy~~ — done. Render Blueprint applied, keys generated and
+   entered in Render's dashboard, live Postgres seeded once via its
+   external connection string, `/health` and an authenticated `/mcp`
+   call both verified against the live URL. **Operational note, still
+   live:** Render's free Postgres instance expires 30-90 days after
+   creation (confirm the exact current window in Render's dashboard).
+   When it does, the database is gone and must be recreated and
+   re-seeded (`npm run db:seed` against the new instance) from
+   scratch. Recurring maintenance item, not one-time — check the
+   instance's age before assuming demo data still exists.
+3. ~~Connect Claude Desktop~~ — done. Wired via the `mcp-remote` npm
+   package as a local stdio bridge, since this installed Desktop
+   version's `claude_desktop_config.json` only accepts stdio
+   `command`/`args` entries. A first attempt using a direct
+   `"type": "http"` entry with a `headers` block was rejected on
+   startup. Ran `docs/demo-script.md`'s line live against the deployed
+   server; the full tool chain worked correctly.
+4. **New:** `docs/demo-script.md`'s opening line assumes the model can
+   discover "the current active incident" on its own, but
+   `check_incident_impact` requires a caller-supplied `incident_id`
+   and no tool exists to list/discover incidents. Worked around for
+   the live demo run by naming the incident directly. Next dedicated
+   session: design and build a `list_active_incidents` (or similarly
+   named) read tool through the normal design-walkthrough-before-code
+   convention, then update the demo script to use it instead of a
+   hardcoded ID. Don't fold this into another session's scope.
+5. **Next.js dashboard** — separate repo, not started. "Read-only + chat"
    per `docs/architecture.md`'s one-line sketch, not yet fully scoped.
    Key constraints already decided: the `dashboard-readonly` API key
    must stay server-side only (Next.js API routes/server components),
@@ -266,25 +293,7 @@ Agreed build order (backend done, this is what's left):
    view, incidents, tickets, account drill-down) before the chat
    feature, which is a materially bigger scope jump (the dashboard
    backend becomes its own MCP client running an agent loop).
-3. **Deploy** — Render (Docker-runtime web service on the free tier,
-   matches the existing `Dockerfile`) for this MCP server, Vercel for
-   the dashboard once built. Switched from the originally planned
-   Fly.io after checking Fly's actual free-tier terms: a 2-hour/7-day
-   trial that then requires a card on file. Render's free web service
-   (750 hrs/month) and free Postgres need none. **Operational note:**
-   Render's free Postgres instance expires 30-90 days after creation
-   (confirm the exact current window in Render's dashboard). When it
-   does, the database is gone and must be recreated and re-seeded
-   (`npm run db:seed` against the new instance) from scratch. This is
-   a recurring maintenance item, not a one-time setup cost, so check
-   the instance's age before assuming demo data still exists.
-4. **Connect Claude Desktop** to the deployed server and run
-   `docs/demo-script.md` live — recommended to do this right after
-   step 3's server deploy, *before* building the dashboard, so the
-   dashboard is built against a proven-working deployed server instead
-   of an unverified one. Still unverified as of this writing — every
-   test so far has been against `localhost`.
-5. **Finalize docs** — `README.md`, `docs/architecture.md` (still a
+6. **Finalize docs** — `README.md`, `docs/architecture.md` (still a
    stub — "*Will fill in once the build stabilizes*", empty diagram
    section), and `docs/ai-assisted-delivery.md`'s engagement log, once
    the dashboard and both deployments actually exist to describe.

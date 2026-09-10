@@ -321,6 +321,31 @@ diff view), correct/redirect as needed, commit.
 > DB-truncate race between test files sharing one database — see the
 > architectural-decisions entry above).
 
+> **Issue:** First Claude Desktop config for the deployed server used a
+> `"type": "http"` `mcpServers` entry with a `headers` block for the API
+> key.
+> **Caught by:** Claude Desktop's own startup validation, which flagged
+> the entry as invalid and skipped it; confirmed under Settings >
+> Developer that no server showed connected.
+> **Fix:** Replaced it with an `mcp-remote` bridge entry (`command:
+> npx`, `args: -y mcp-remote <url> --header x-api-key:${MCP_KEY_AGENT}`),
+> the documented workaround for MCP clients whose config only supports
+> local stdio servers. Verified by relaunching and confirming the
+> server showed connected.
+
+> **Issue:** `docs/demo-script.md`'s opening line assumed the model
+> could discover "the current active incident" on its own, but
+> `check_incident_impact` requires a caller-supplied `incident_id` and
+> no tool exists to list or discover incidents.
+> **Caught by:** Running the demo line for the first time in a real
+> Claude Desktop conversation against the deployed server. The model
+> correctly stopped and asked for an incident ID instead of guessing or
+> hallucinating one.
+> **Fix:** None applied yet. Reran the demo with the incident ID
+> supplied directly to confirm the rest of the tool chain still works.
+> Adding a `list_active_incidents` tool is deferred to its own future
+> session; see "Next steps" in `CLAUDE.md`.
+
 ## Engagement log
 
 - **Day 1:** Scoped the four data domains and seven tools; decided against
@@ -627,4 +652,35 @@ diff view), correct/redirect as needed, commit.
   keeps its existing placeholder values, no need to change those.
 - **Day 5:** Deployment prep is done and locally verified. Render
   account setup and the actual deploy are next.
+- **Day 6:** Created the Render account, connected the GitHub repo, and
+  applied the `render.yaml` Blueprint. Generated real `MCP_KEY_AGENT`
+  and `MCP_KEY_DASHBOARD` values with `openssl rand -hex 32` and
+  entered them directly in Render's dashboard.
+- **Day 6:** Seeded the live Postgres once via its external connection
+  string, since the free tier has no Shell access. Verified `GET
+  /health` and an authenticated `POST /mcp` `tools/list` call both
+  returned 200 against the deployed URL.
+- **Day 6:** First attempt at wiring Claude Desktop to the deployed
+  server used a `"type": "http"` `mcpServers` entry with a `headers`
+  block. Desktop rejected it on startup, since the installed version
+  only supports stdio `command`/`args` entries, not a direct
+  remote-HTTP config. Switched to the `mcp-remote` npm package as a
+  local stdio-to-HTTP bridge, passing the API key via `--header
+  x-api-key:${MCP_KEY_AGENT}`. Connected successfully on the next
+  relaunch.
+- **Day 6:** Ran the demo script's opening line for real for the first
+  time and it failed. `check_incident_impact` requires an
+  `incident_id` and there's no tool that lets the model discover the
+  current active incident, so it correctly asked for one instead of
+  guessing. This assumption in `docs/demo-script.md` had never been
+  tested against a live conversation before, only against individual
+  tools' curl behavior. Reworded the line to supply the incident ID
+  directly and reran it; the full chain (`check_incident_impact` ->
+  `get_account_360`, filtered to Enterprise, sorted by MRR) worked and
+  produced a reasonable escalation draft. Decided to leave the demo
+  script as-is for now and treat a proper `list_active_incidents`
+  discovery tool as its own future session rather than adding it
+  mid-deploy.
+- **Day 6:** Deployment is live and verified end to end, from a real
+  Claude Desktop connection, not just curl.
 
