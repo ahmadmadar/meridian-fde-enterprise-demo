@@ -756,4 +756,38 @@ diff view), correct/redirect as needed, commit.
   ticket, and produced a usable escalation draft. Demo script's
   original discovery gap is closed and verified live, not just via
   curl.
+- **Day 6:** Started the Next.js dashboard as its own repo at
+  `../meridian-dashboard`, per the separate-repo decision already
+  made in `docs/architecture.md`. Scaffolded with `create-next-app`
+  (TypeScript, Tailwind, App Router, `src/` layout) rather than
+  hand-rolling the setup.
+- **Day 6:** Walked through the dashboard's MCP integration before
+  writing screens: a server-only client module
+  (`src/lib/mcp-client.ts`, guarded with the `server-only` package)
+  wraps the official `@modelcontextprotocol/sdk` client and
+  `StreamableHTTPClientTransport`, sending the `dashboard-readonly`
+  key as the `x-api-key` header the server expects. One client
+  connection per call, matching the server's own per-request
+  `buildServer()` pattern, since the server is stateless.
+- **Day 6:** Built the first read-only screen, the renewal-risk
+  portfolio view, calling `get_renewal_risk` with no filters and
+  rendering the result as a table with a color-coded risk badge.
+  Marked the route `force-dynamic` so it hits the live server on
+  every request instead of getting statically prerendered at build
+  time.
+- **Day 6:** Verified end to end against the deployed Render server,
+  not just a mocked response: `npm run build` and `npm run lint`
+  both clean, then the dev server against real data, confirmed the
+  rendered risk-badge counts matched the page's own summary count.
+  First request took about 30 seconds, the Render free tier's cold
+  start after idling, then settled to under 500ms on repeat
+  requests.
+- **Day 6:** Caught a real near-miss on secret handling before
+  anything was committed: the `dashboard-readonly` key ended up
+  pasted into `.env.example`, the file meant to be committed as
+  documentation, instead of the gitignored `.env.local`. Nothing had
+  been pushed yet, so no exposure, but it would have leaked the key
+  into the repo if left uncaught. Swapped the values and confirmed
+  with `git check-ignore` that the split was correct before moving
+  on.
 

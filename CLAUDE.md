@@ -309,16 +309,25 @@ Agreed build order (backend done, this is what's left):
    Desktop fixed it. Recurring gotcha, not one-time: restart Claude
    Desktop after every future tool deploy before assuming it isn't
    working.
-5. **Next.js dashboard** — separate repo, not started. "Read-only + chat"
-   per `docs/architecture.md`'s one-line sketch, not yet fully scoped.
-   Key constraints already decided: the `dashboard-readonly` API key
-   must stay server-side only (Next.js API routes/server components),
-   never reach the browser; `get_audit_log` is out of reach for this
-   dashboard since `dashboard-readonly` deliberately lacks `admin`.
-   Recommend building the read-only screens (renewal-risk portfolio
-   view, incidents, tickets, account drill-down) before the chat
-   feature, which is a materially bigger scope jump (the dashboard
-   backend becomes its own MCP client running an agent loop).
+5. **Next.js dashboard**: in progress, separate repo at
+   `../meridian-dashboard` (sibling directory, both under
+   `~/Documents/GitHub`). Scaffolded with `create-next-app`
+   (TypeScript, Tailwind, App Router, `src/` layout). Server-side MCP
+   client (`src/lib/mcp-client.ts`, guarded with the `server-only`
+   package so it can never end up in a browser bundle) wraps
+   `@modelcontextprotocol/sdk`'s `StreamableHTTPClientTransport`,
+   sending the `dashboard-readonly` key as the `x-api-key` header the
+   server expects. One client connection per call, matching the
+   server's own stateless per-request pattern (`buildServer()` in
+   `server.ts`). First screen, the renewal-risk portfolio view, is
+   built and verified live against the deployed Render server:
+   `npm run build`/`lint` both clean, and the rendered risk-badge
+   counts hand-checked against the page's own summary count. Key
+   constraints still hold: the `dashboard-readonly` key stays
+   server-side only, never reaching the browser; `get_audit_log`
+   stays out of reach since `dashboard-readonly` deliberately lacks
+   `admin`. Remaining before the chat feature: the incidents,
+   tickets, and account drill-down read-only screens.
 6. **Finalize docs** — `README.md`, `docs/architecture.md` (still a
    stub — "*Will fill in once the build stabilizes*", empty diagram
    section), and `docs/ai-assisted-delivery.md`'s engagement log, once
