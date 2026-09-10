@@ -16,12 +16,13 @@ import { createTicketInputSchema, createTicket } from "./tools/create_ticket.js"
 import { checkIncidentImpactInputSchema, checkIncidentImpact } from "./tools/check_incident_impact.js";
 import { getRenewalRiskInputSchema, getRenewalRisk } from "./tools/get_renewal_risk.js";
 import { getAuditLogInputSchema, getAuditLog } from "./tools/get_audit_log.js";
+import { listActiveIncidentsInputSchema, listActiveIncidents } from "./tools/list_active_incidents.js";
 import { logger } from "./logger.js";
 
 // --- Tool registration ---------------------------------------------------
 // Each additional tool (search_tickets, create_ticket, check_incident_impact,
-// get_renewal_risk, get_audit_log) follows this same shape: zod schema in,
-// auth+scope check, prisma query, mapped errors out.
+// get_renewal_risk, get_audit_log, list_active_incidents) follows this same
+// shape: zod schema in, auth+scope check, prisma query, mapped errors out.
 //
 // Wrapped in a factory rather than built once at module scope: the
 // underlying SDK's Server.connect() throws if called on an instance
@@ -154,6 +155,24 @@ function buildServer(): McpServer {
       const apiKey = extra?.requestInfo?.headers?.["x-api-key"] as string | undefined;
       try {
         const result = await getAuditLog(input, apiKey);
+        return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+      } catch (err) {
+        return mapErrorToToolResult(err);
+      }
+    }
+  );
+
+  server.registerTool(
+    "list_active_incidents",
+    {
+      description:
+        "List currently active incidents (status other than RESOLVED, unless overridden), ordered most-severe first, each with affected_account_count and total_mrr_impacted_usd. Use this to find an incident_id, then call check_incident_impact for the full account-level breakdown. Filter by severity or status.",
+      inputSchema: listActiveIncidentsInputSchema.shape,
+    },
+    async (input, extra) => {
+      const apiKey = extra?.requestInfo?.headers?.["x-api-key"] as string | undefined;
+      try {
+        const result = await listActiveIncidents(input, apiKey);
         return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
       } catch (err) {
         return mapErrorToToolResult(err);

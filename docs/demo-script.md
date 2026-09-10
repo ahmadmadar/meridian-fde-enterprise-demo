@@ -10,15 +10,17 @@ in Claude Desktop or claude.ai.
 
 ## What it should trigger, step by step
 
-1. `check_incident_impact` — find accounts affected by the active
-   incident; the response already includes `plan_tier` and `mrr_usd` per
+1. `list_active_incidents` — discover the current active incident's
+   `incident_id` (defaults to non-RESOLVED, most severe first)
+2. `check_incident_impact` — find accounts affected by that incident;
+   the response already includes `plan_tier` and `mrr_usd` per
    account, so filtering to Enterprise tier and sorting by MRR needs no
    extra tool call
-2. `search_tickets` — cross-reference the Enterprise-tier affected
+3. `search_tickets` — cross-reference the Enterprise-tier affected
    accounts for SLA-risk open tickets
-3. `get_account_360` per flagged account, if the model needs full
+4. `get_account_360` per flagged account, if the model needs full
    context (open tickets, usage trend) before drafting
-4. Model drafts the escalation message using the assembled context
+5. Model drafts the escalation message using the assembled context
 
 ## Why this is the moment that sells it
 

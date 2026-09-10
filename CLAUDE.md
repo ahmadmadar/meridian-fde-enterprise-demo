@@ -218,6 +218,24 @@ All seven planned tools are now built and verified:
 `create_ticket`, `check_incident_impact`, `get_renewal_risk`,
 `get_audit_log`.
 
+`list_active_incidents` (read, discovery list) is also done and
+verified — built to close the demo-script gap below. Defaults to
+non-RESOLVED incidents (`INVESTIGATING`/`IDENTIFIED`/`MONITORING`)
+unless the caller passes an explicit `status`, ordered severity-first
+(`SEV1` first, relying on Postgres enum declaration order rather than a
+separate rank mapping) then most-recent. Returns a per-incident summary
+(`affected_account_count`, `total_mrr_impacted_usd`) so the model can
+pick an `incident_id` before calling `check_incident_impact` for the
+full breakdown, rather than duplicating that tool's output. Deliberately
+has no `account_id` filter — weighed `search_tickets`/`get_renewal_risk`'s
+account_id precedent and declined it, since the only proven need right
+now is incident discovery. Both API keys carry `read:incidents`, so,
+same as `check_incident_impact` and `get_renewal_risk`, there's no
+`FORBIDDEN_SCOPE` case to test. Verified the active-status default, the
+`status` override, `severity` filtering and ordering, exact MRR math
+against fixtures, and auth rejection with 5 new vitest tests — full
+suite now 9 files, 45 tests.
+
 Deployment to Render is done and verified end to end, not just
 prepped. The Render account was created and the GitHub repo connected,
 the `render.yaml` Blueprint was applied (Postgres provisioned first,
@@ -274,15 +292,14 @@ Agreed build order (backend done, this is what's left):
    `"type": "http"` entry with a `headers` block was rejected on
    startup. Ran `docs/demo-script.md`'s line live against the deployed
    server; the full tool chain worked correctly.
-4. **New:** `docs/demo-script.md`'s opening line assumes the model can
-   discover "the current active incident" on its own, but
-   `check_incident_impact` requires a caller-supplied `incident_id`
-   and no tool exists to list/discover incidents. Worked around for
-   the live demo run by naming the incident directly. Next dedicated
-   session: design and build a `list_active_incidents` (or similarly
-   named) read tool through the normal design-walkthrough-before-code
-   convention, then update the demo script to use it instead of a
-   hardcoded ID. Don't fold this into another session's scope.
+4. ~~`list_active_incidents`~~ — done. Built the discovery tool through
+   the normal design-walkthrough-before-code convention, declining an
+   `account_id` filter since the only proven need is feeding an
+   `incident_id` into `check_incident_impact`. Updated
+   `docs/demo-script.md` to call it as the first step instead of
+   assuming the model already knows the incident, and covered it with
+   5 new vitest tests. See "Current build status" for the full
+   verification list.
 5. **Next.js dashboard** — separate repo, not started. "Read-only + chat"
    per `docs/architecture.md`'s one-line sketch, not yet fully scoped.
    Key constraints already decided: the `dashboard-readonly` API key

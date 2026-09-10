@@ -31,9 +31,10 @@ diff view), correct/redirect as needed, commit.
   - [x] `check_incident_impact`
   - [x] `get_renewal_risk`
   - [x] `get_audit_log`
+  - [x] `list_active_incidents`
 - [x] Auth/scope middleware first draft
-- [x] Vitest test scaffolding — `vitest.config.ts` + `test/` (8 files,
-      40 tests) now exist, gated behind a `meridian_test` DB and
+- [x] Vitest test scaffolding — `vitest.config.ts` + `test/` (9 files,
+      45 tests) now exist, gated behind a `meridian_test` DB and
       `.env.test`. Integration-style throughout (real HTTP + real
       Postgres, no mocks) — see the architectural-decisions entry below
       for why. "Test suite" in the Day 3 log entry below still refers to
@@ -196,6 +197,15 @@ diff view), correct/redirect as needed, commit.
   repo file, gitignored or not. Local `.env` keeps its existing
   placeholder values since there is no real exposure to defend
   against there.
+- `list_active_incidents`'s scope: walked through the design before
+  building rather than assuming `search_tickets`/`get_renewal_risk`'s
+  `account_id` precedent applied automatically. Declined an `account_id`
+  filter (the `IncidentAccount` join would support it) since the tool's
+  only proven job right now is feeding an `incident_id` into
+  `check_incident_impact` for the demo script. Ordered
+  `severity asc, startedAt desc`, relying on Postgres enum comparison
+  following declaration order (`SEV1`, `SEV2`, `SEV3`) to put the most
+  severe incidents first without a separate rank mapping.
 
 ## What Claude Code got wrong
 
@@ -683,4 +693,35 @@ diff view), correct/redirect as needed, commit.
   mid-deploy.
 - **Day 6:** Deployment is live and verified end to end, from a real
   Claude Desktop connection, not just curl.
+- **Day 6:** Walked through `list_active_incidents`'s design before
+  writing code: read-only discovery tool for `check_incident_impact`,
+  gated behind `read:incidents` (same scope as `check_incident_impact`,
+  so no `FORBIDDEN_SCOPE` case here either). Weighed adding an
+  `account_id` filter like `search_tickets`/`get_renewal_risk` have,
+  then declined it since the only proven need right now is feeding an
+  `incident_id` into `check_incident_impact`. Defaults to non-RESOLVED
+  statuses via the same override convention as `search_tickets`'s
+  `ACTIVE_TICKET_STATUSES`, defined locally since this is the first
+  incident-status filter in the codebase and the three-tool threshold
+  for `constants.ts` hasn't been hit.
+- **Day 6:** Built `list_active_incidents` — orders
+  `severity asc, startedAt desc`, relying on Postgres enum comparison
+  following declaration order (`SEV1` first) instead of a separate
+  severity-rank mapping. Returns a summary per incident
+  (`affected_account_count`, `total_mrr_impacted_usd`), not a full
+  account breakdown, since the tool's job is letting the model pick an
+  `incident_id` before calling `check_incident_impact` for the full
+  picture.
+- **Day 6:** Tested end-to-end: default call excludes `RESOLVED`, an
+  explicit `status` override replaces the default rather than
+  narrowing it, `severity` filter and SEV1-first ordering, hand-verified
+  `total_mrr_impacted_usd` against a fixture's account `mrr` sum, and
+  bogus-API-key rejection. Cross-checked the seeded live incident
+  directly via Prisma to confirm the API response matched real DB
+  state. Wrote 5 new vitest tests; full suite now 9 files, 45 tests,
+  all green.
+- **Day 6:** Updated `docs/demo-script.md` to call
+  `list_active_incidents` as the first step instead of assuming the
+  model already knows the incident, closing the gap the live demo run
+  surfaced earlier today.
 
