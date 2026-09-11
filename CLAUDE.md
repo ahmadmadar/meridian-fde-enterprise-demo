@@ -309,29 +309,20 @@ Agreed build order (backend done, this is what's left):
    Desktop fixed it. Recurring gotcha, not one-time: restart Claude
    Desktop after every future tool deploy before assuming it isn't
    working.
-5. **Next.js dashboard**: in progress, separate repo at
-   `../meridian-dashboard` (sibling directory, both under
-   `~/Documents/GitHub`). Scaffolded with `create-next-app`
-   (TypeScript, Tailwind, App Router, `src/` layout). Server-side MCP
-   client (`src/lib/mcp-client.ts`, guarded with the `server-only`
-   package so it can never end up in a browser bundle) wraps
-   `@modelcontextprotocol/sdk`'s `StreamableHTTPClientTransport`,
-   sending the `dashboard-readonly` key as the `x-api-key` header the
-   server expects. One client connection per call, matching the
-   server's own stateless per-request pattern (`buildServer()` in
-   `server.ts`). First screen, the renewal-risk portfolio view, is
-   built and verified live against the deployed Render server:
-   `npm run build`/`lint` both clean, and the rendered risk-badge
-   counts hand-checked against the page's own summary count. Key
-   constraints still hold: the `dashboard-readonly` key stays
-   server-side only, never reaching the browser; `get_audit_log`
-   stays out of reach since `dashboard-readonly` deliberately lacks
-   `admin`. Remaining before the chat feature: the incidents,
-   tickets, and account drill-down read-only screens.
-6. **Finalize docs** — `README.md`, `docs/architecture.md` (still a
-   stub — "*Will fill in once the build stabilizes*", empty diagram
-   section), and `docs/ai-assisted-delivery.md`'s engagement log, once
-   the dashboard and both deployments actually exist to describe.
+5. ~~Next.js dashboard~~ — done, separate repo at `../meridian-dashboard`
+   (sibling directory, both under `~/Documents/GitHub`). All four
+   planned read-only screens are built and verified live against the
+   deployed Render server: Renewal Risk, Incidents (with per-incident
+   drill-in), Tickets (URL-param-filtered search), and Account
+   drill-down. Deployed to Vercel. Chat was scoped out, not deferred —
+   full reasoning is in `docs/architecture.md`'s "Chat: scoped out"
+   section — since the project's core FDE/SE signal and the
+   dashboard's own "moment that sells it" were already fully
+   demonstrated without it. See `../meridian-dashboard/CLAUDE.md` for
+   that repo's own build status and conventions.
+6. ~~Finalize docs~~ — done. `README.md` and `docs/architecture.md`
+   (overview, key decisions, dashboard section, deployment section,
+   the "Chat: scoped out" writeup) are both filled in, not stubs.
 
 `TICKET_STATUSES`, `TICKET_PRIORITIES`, and `ACTIVE_TICKET_STATUSES` now
 live in `src/tools/constants.ts` (extracted once a third tool needed
