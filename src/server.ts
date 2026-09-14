@@ -213,6 +213,16 @@ function mapErrorToToolResult(err: unknown) {
 const app = express();
 app.use(express.json());
 
+app.get("/", (_req, res) => {
+  res.status(200).json({
+    status: "ok",
+    service: "meridian-mcp-server",
+    protocol: "MCP over HTTP/SSE",
+    endpoint: "POST /mcp",
+    repo: "https://github.com/ahmadmadar/meridian-fde-enterprise-demo",
+  });
+});
+
 app.get("/health", (_req, res) => {
   res.status(200).json({ status: "ok" });
 });
