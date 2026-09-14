@@ -32,6 +32,7 @@ async function main() {
               : tier === "GROWTH" ? randInt(2000, 15000) * 100
               : randInt(200, 2000) * 100;
 
+    const seatsLicensed = randInt(5, 500);
     const account = await prisma.account.create({
       data: {
         name,
@@ -39,8 +40,8 @@ async function main() {
         mrr,
         healthScore: randInt(20, 98),
         renewalDate: new Date(Date.now() + randInt(-30, 300) * 86400000),
-        seatsLicensed: randInt(5, 500),
-        seatsUsed: randInt(3, 480),
+        seatsLicensed,
+        seatsUsed: randInt(3, seatsLicensed),
       },
     });
     accounts.push(account);
