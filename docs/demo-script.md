@@ -3,6 +3,10 @@
 Run this live, connected to the deployed server as a remote MCP connector
 in Claude Desktop or claude.ai.
 
+> See `docs/ai-assisted-delivery.md`, Day 6, for how this exact line
+> broke on its first live run (no tool could discover the active
+> incident) and was fixed by adding `list_active_incidents`.
+
 ## The line
 
 > "Show me all Enterprise accounts with SLA-risk tickets open during the
