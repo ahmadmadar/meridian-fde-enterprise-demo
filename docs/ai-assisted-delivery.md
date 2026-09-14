@@ -790,4 +790,11 @@ diff view), correct/redirect as needed, commit.
   into the repo if left uncaught. Swapped the values and confirmed
   with `git check-ignore` that the split was correct before moving
   on.
+- **Day 7:** Added architecture diagrams to `docs/architecture.md`: a
+  plain-language system overview, a UML sequence diagram of the live
+  demo chain (`list_active_incidents` -> `check_incident_impact` ->
+  `get_account_360`), and a UML class diagram of the two API keys'
+  scope model. Also added a short "How this fits together"
+  section with the same overview image to the dashboard repo's
+  README, linking back here for full technical depth.
 

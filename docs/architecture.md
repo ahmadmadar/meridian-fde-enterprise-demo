@@ -1,5 +1,7 @@
 # Architecture
 
+![System overview: Claude Desktop and the Meridian Dashboard both call the Meridian MCP server, which is the only component that talks to the database](assets/overview.png)
+
 ## Overview
 
 Meridian's internal systems (accounts, support tickets, product usage,
@@ -25,6 +27,25 @@ them through a single, authenticated, scope-controlled interface.
   require a distinct scope from reads.
 - **Structured error codes:** `VALIDATION_ERROR`, `NOT_FOUND`,
   `FORBIDDEN_SCOPE`, `CONFLICT`, `INTERNAL_ERROR`, not generic failures.
+
+## Demo chain — sequence diagram
+
+The live demo chain (see `docs/demo-script.md`): a single natural-language
+prompt to Claude Desktop triggers `list_active_incidents` to find the
+current incident, `check_incident_impact` to pull affected accounts and
+MRR exposure, then `get_account_360` per Enterprise account to build a
+sorted escalation draft — all through the same authenticated MCP server.
+
+![Sequence diagram of the live demo tool-call chain: a user prompt to Claude Desktop triggers list_active_incidents, then check_incident_impact, then get_account_360 in a loop over affected Enterprise accounts, each call round-tripping through the Meridian MCP server to Postgres, ending in an escalation draft sorted by MRR](assets/demo-sequence.png)
+
+## Scope model — class diagram
+
+`claude-agent-prod` and `dashboard-readonly` authenticate against the same
+server but carry different scopes: only `claude-agent-prod` can write
+tickets or read the audit log, so `get_audit_log` and any write tool are
+unreachable from the dashboard by construction, not by convention.
+
+![Class diagram of the API key scope model: ClaudeAgentProdKey has read and write access plus admin-scoped audit log access, DashboardReadonlyKey has read-only access and is explicitly forbidden from the audit log, both authenticating against MeridianMCPServer](assets/scope-class.png)
 
 ## Dashboard
 
