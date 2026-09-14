@@ -797,4 +797,21 @@ diff view), correct/redirect as needed, commit.
   scope model. Also added a short "How this fits together"
   section with the same overview image to the dashboard repo's
   README, linking back here for full technical depth.
+- **Day 7:** Claude Desktop couldn't connect to the deployed server:
+  `mcp-remote`'s log showed `SdkHttpError: Failed to open SSE stream:
+  Not Found` right after a successful `initialize`. Traced it to
+  `server.ts` only ever registering `app.post("/mcp", ...)`. The
+  Streamable HTTP client opens a `GET /mcp` request after `initialize`
+  to establish the SSE side of the protocol, and with no route
+  registered, Express fell through to its default 404 HTML handler
+  instead of a JSON-RPC error, which is what actually broke the
+  client. Confirmed against the MCP SDK's own stateless reference
+  example (`examples/server/simpleStatelessStreamableHttp.ts`), which
+  registers `GET`/`DELETE` handlers returning a clean `405 Method Not
+  Allowed` JSON-RPC error, since stateless mode has no session to
+  stream on or tear down but still needs the routes to exist. Fixed by
+  adding those same two handlers. Verified `npx tsc --noEmit` clean,
+  confirmed `GET`/`DELETE /mcp` now return the JSON-RPC 405 instead of
+  an HTML 404 against the local dev server with `POST /mcp` unaffected,
+  and reran the full vitest suite (9 files, 45 tests, still green).
 

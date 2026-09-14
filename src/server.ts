@@ -225,6 +225,22 @@ app.post("/mcp", async (req, res) => {
   await transport.handleRequest(req, res, req.body);
 });
 
+// Stateless mode has no session to open a server-push stream on or tear
+// down, so GET/DELETE aren't wired to the SDK transport like POST is.
+// They still need a route, though, or Express's default 404 HTML page
+// trips up MCP clients that open a GET stream right after initialize
+// (e.g. mcp-remote), which expect a JSON-RPC 405 instead. Matches the
+// SDK's own stateless example (examples/server/simpleStatelessStreamableHttp.ts).
+const methodNotAllowed = (_req: express.Request, res: express.Response) => {
+  res.status(405).json({
+    jsonrpc: "2.0",
+    error: { code: -32000, message: "Method not allowed." },
+    id: null,
+  });
+};
+app.get("/mcp", methodNotAllowed);
+app.delete("/mcp", methodNotAllowed);
+
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
   logger.info({ port: PORT }, "Meridian MCP server listening");
