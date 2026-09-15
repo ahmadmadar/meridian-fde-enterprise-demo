@@ -34,6 +34,7 @@ See [`docs/setup.md`](docs/setup.md) for setup commands
 - [`docs/architecture.md`](docs/architecture.md): system design and key decisions
 - [`docs/demo-script.md`](docs/demo-script.md): the live demo narrative
 - [`docs/ai-assisted-delivery.md`](docs/ai-assisted-delivery.md): build log
+- [`docs/production-path.md`](docs/production-path.md): what would need to change to make this a real production system, not implemented work
 
 ## Status
 
