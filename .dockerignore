@@ -1,0 +1,19 @@
+# Keep local secrets and build artifacts out of the image. The Dockerfile's
+# `COPY . .` would otherwise bake .env into every image pushed to a registry.
+.env*
+node_modules/
+dist/
+.git/
+.github/
+.claude/
+
+# Not needed at runtime (tsc only compiles src/; prisma/ stays for
+# migrations and the seed script)
+test/
+evals/
+docs/
+*.log
+.DS_Store
+scratch.txt
+prompts.txt
+positioning.md
