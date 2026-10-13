@@ -111,3 +111,41 @@ check) and a free Postgres instance.
 idle and cold-starts (~30-60s) on the next request. The free Postgres
 instance expires 30-90 days after creation and needs recreating +
 re-seeding when it does — see the note in `CLAUDE.md`.
+
+## Recovering from an expired database
+
+When the free Postgres instance expires, the web service stays up but
+tool calls fail. The API keys live on the web service, so they do not
+need regenerating, and neither Claude Desktop nor the dashboard config
+changes.
+
+1. In the Render dashboard, delete the expired `meridian-pg` instance
+   if it is still listed.
+2. Recreate it. Either **Blueprints → your blueprint → Manual Sync**
+   (Render provisions the missing `meridian-pg` and re-links
+   `DATABASE_URL` via `fromDatabase`), or create a Postgres instance by
+   hand (name `meridian-pg`, database `meridian`, user `meridian`, free
+   plan) and set `DATABASE_URL` on the web service to its **Internal**
+   connection string.
+3. Redeploy the web service (**Manual Deploy → Deploy latest commit**)
+   if it did not restart on its own. Migrations apply on boot.
+4. Seed from your machine with the new database's **External
+   Connection String** (append `?sslmode=require` if the connection
+   errors on SSL):
+   ```bash
+   DATABASE_URL="<external connection string>" npm run db:seed
+   ```
+5. Verify with a real tool call, not `tools/list`. `tools/list` does
+   not authenticate, so it succeeds even with a wrong key:
+   ```bash
+   curl -X POST https://<your-service>.onrender.com/mcp \
+     -H "x-api-key: $MCP_KEY_AGENT" \
+     -H "Content-Type: application/json" \
+     -H "Accept: application/json, text/event-stream" \
+     -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"list_active_incidents","arguments":{}}}'
+   ```
+6. Fully quit and relaunch Claude Desktop so the `mcp-remote` bridge
+   refetches the tool list.
+
+Note the new instance's creation date so the next expiry check is on
+the calendar.

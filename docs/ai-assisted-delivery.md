@@ -815,3 +815,18 @@ diff view), correct/redirect as needed, commit.
   an HTML 404 against the local dev server with `POST /mcp` unaffected,
   and reran the full vitest suite (9 files, 45 tests, still green).
 
+- **Day 8:** The free Render Postgres instance expired, so the live
+  server had no data. Recreated `meridian-pg`, reseeded it through the
+  external connection string, and added a recovery section to
+  `docs/setup.md` so the next expiry is a checklist instead of a
+  rediscovery. The API keys sit on the web service, so nothing else
+  needed to change.
+- **Day 8:** Caught a wrong verification command from Claude Code
+  during the recovery. It gave me an `Authorization: Bearer` header,
+  but the server reads `x-api-key`, so the authenticated tool call
+  returned `UNAUTHORIZED`. The `tools/list` check had passed anyway,
+  which made the key look fine: `tools/list` never calls
+  `authenticate()`, only the tool handlers do. Checked `scopes.ts` and
+  `server.ts` to find the real header, and the corrected command
+  returned the seeded data. Lesson: verify a deploy with a real tool
+  call, not `tools/list`. The recovery doc now says this explicitly.
