@@ -3,7 +3,7 @@
 This is my own take on the gap between what I actually built and what a
 real production system for a company like Meridian would need. Nothing
 here is implemented, it's just me thinking out loud about where the demo
-holds up and where it's faking it, and why.
+holds up and where it's faking it, and why. (Currently being explored in the infra repo).
 
 ## What holds up versus what's a placeholder
 
