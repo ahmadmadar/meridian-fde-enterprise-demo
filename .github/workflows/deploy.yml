@@ -125,14 +125,44 @@ jobs:
 
       # ECR scans on push (scan_on_push in meridian-infra). Fail on CRITICAL
       # before anything is deployed; HIGH is reported but does not block.
+      # The scan record does not exist for a few seconds after the push, and
+      # `aws ecr wait image-scan-complete` treats that as a failure
+      # (ScanNotFoundException), so poll instead: "not found" and
+      # IN_PROGRESS mean keep waiting; any other error fails immediately.
+      # --no-paginate: the CLI's auto-pagination crashes while the scan is
+      # IN_PROGRESS (no imageScanFindings to merge); the counts are on page 1.
       - name: Scan gate
         env:
           TAG: ${{ steps.image.outputs.tag }}
         run: |
-          aws ecr wait image-scan-complete --repository-name "$ECR_REPOSITORY" \
-            --image-id "imageTag=${TAG}"
+          status=NOT_FOUND
+          for _ in $(seq 1 60); do
+            if out="$(aws ecr describe-image-scan-findings --repository-name "$ECR_REPOSITORY" \
+                 --image-id "imageTag=${TAG}" --no-paginate \
+                 --query 'imageScanStatus.status' --output text 2>&1)"; then
+              status="$out"
+            elif [[ "$out" == *ScanNotFoundException* ]]; then
+              status=NOT_FOUND
+            else
+              echo "::error::${out}"
+              exit 1
+            fi
+            case "$status" in
+              COMPLETE) break ;;
+              FAILED | UNSUPPORTED_IMAGE)
+                echo "::error::ECR scan of ${TAG} ended as ${status}; not deploying."
+                exit 1
+                ;;
+            esac
+            sleep 5
+          done
+          if [ "$status" != "COMPLETE" ]; then
+            echo "::error::ECR scan of ${TAG} still ${status} after 5 minutes; not deploying."
+            exit 1
+          fi
           counts="$(aws ecr describe-image-scan-findings --repository-name "$ECR_REPOSITORY" \
-            --image-id "imageTag=${TAG}" --query 'imageScanFindings.findingSeverityCounts' --output json)"
+            --image-id "imageTag=${TAG}" --no-paginate \
+            --query 'imageScanFindings.findingSeverityCounts' --output json)"
           echo "Scan findings for ${TAG}: ${counts}"
           critical="$(echo "$counts" | jq -r '.CRITICAL // 0')"
           if [ "$critical" -gt 0 ]; then
