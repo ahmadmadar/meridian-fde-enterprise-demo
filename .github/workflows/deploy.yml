@@ -1,0 +1,177 @@
+# Test on every push and PR; build, scan and deploy to AWS only when started
+# by hand from main, and only after a reviewer approves the `poc` environment.
+#
+# The AWS side lives in the sibling repo meridian-infra: the deploy IAM user
+# (modules/ci) and docs/architecture.md decision 11. GitHub OIDC is blocked on
+# that account, so the job uses an access key stored as a `poc` environment
+# secret. Environment secrets are only handed to a job after approval.
+
+name: CI/CD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      cloudfront_url:
+        description: "Optional. https://<id>.cloudfront.net from `terraform output`; if set, /health is checked after the deploy."
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  AWS_REGION: us-east-2
+  ECR_REPOSITORY: meridian-poc/mcp-server
+  ECS_CLUSTER: meridian-poc
+  ECS_SERVICE: meridian-poc-mcp-server
+  ECS_TASK_FAMILY: meridian-poc-mcp-server
+  CONTAINER_NAME: mcp-server
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: meridian_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npx prisma generate
+      # .env.test is gitignored; vitest.config.ts loads it. Throwaway values
+      # for the service container above, not real credentials.
+      - name: Write .env.test
+        run: |
+          {
+            echo 'DATABASE_URL=postgresql://postgres:postgres@localhost:5432/meridian_test?schema=public'
+            echo "MCP_KEY_AGENT=ci-$(openssl rand -hex 24)"
+            echo "MCP_KEY_DASHBOARD=ci-$(openssl rand -hex 24)"
+            echo 'LOG_LEVEL=silent'
+            echo 'PORT=3002'
+          } > .env.test
+      - run: npm test
+
+  # One job on purpose: GitHub asks for approval once per job that references
+  # an environment with required reviewers, so splitting build and deploy
+  # would mean two approvals, the first of them before the build.
+  release:
+    needs: test
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04-arm # native ARM64 build for the Graviton tasks
+    environment: poc
+    concurrency:
+      group: release-poc
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - id: ecr
+        uses: aws-actions/amazon-ecr-login@03f1aad4c6c7ffd436567f42f9384779290529bd # v2.1.7
+
+      # Tags are immutable (the git short SHA), so a re-run of the same commit
+      # must reuse the image already in ECR instead of failing on the push.
+      - name: Resolve image tag
+        id: image
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+        run: |
+          tag="$(git rev-parse --short=7 HEAD)"
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+          echo "uri=${REGISTRY}/${ECR_REPOSITORY}:${tag}" >> "$GITHUB_OUTPUT"
+          if aws ecr describe-images --repository-name "$ECR_REPOSITORY" \
+               --image-ids "imageTag=${tag}" > /dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "Image ${tag} is already in ECR; skipping build."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - if: steps.image.outputs.exists == 'false'
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      # provenance/sbom off: otherwise Docker pushes an image index, which the
+      # ECR scan and lifecycle rule mishandle (see meridian-infra CLAUDE.md).
+      - if: steps.image.outputs.exists == 'false'
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          platforms: linux/arm64
+          push: true
+          provenance: false
+          sbom: false
+          tags: ${{ steps.image.outputs.uri }}
+
+      # ECR scans on push (scan_on_push in meridian-infra). Fail on CRITICAL
+      # before anything is deployed; HIGH is reported but does not block.
+      - name: Scan gate
+        env:
+          TAG: ${{ steps.image.outputs.tag }}
+        run: |
+          aws ecr wait image-scan-complete --repository-name "$ECR_REPOSITORY" \
+            --image-id "imageTag=${TAG}"
+          counts="$(aws ecr describe-image-scan-findings --repository-name "$ECR_REPOSITORY" \
+            --image-id "imageTag=${TAG}" --query 'imageScanFindings.findingSeverityCounts' --output json)"
+          echo "Scan findings for ${TAG}: ${counts}"
+          critical="$(echo "$counts" | jq -r '.CRITICAL // 0')"
+          if [ "$critical" -gt 0 ]; then
+            echo "::error::${critical} CRITICAL finding(s) in ${TAG}; not deploying."
+            exit 1
+          fi
+
+      # Start from the latest revision in the family so config changes made in
+      # Terraform are carried forward, with only the image swapped.
+      - name: Fetch current task definition
+        run: |
+          aws ecs describe-task-definition --task-definition "$ECS_TASK_FAMILY" \
+            --query taskDefinition > task-definition.json
+
+      - id: render
+        uses: aws-actions/amazon-ecs-render-task-definition@8d79160660ad39c402a16e5fc7cd2a32e8f7d6b7 # v1.9.1
+        with:
+          task-definition: task-definition.json
+          container-name: ${{ env.CONTAINER_NAME }}
+          image: ${{ steps.image.outputs.uri }}
+
+      # Waits for the service to be stable; the service's deployment circuit
+      # breaker rolls a failing deploy back.
+      - uses: aws-actions/amazon-ecs-deploy-task-definition@a00d4d57ac0de1a99b39fe469f3d898d38717c2b # v2.6.4
+        with:
+          task-definition: ${{ steps.render.outputs.task-definition }}
+          service: ${{ env.ECS_SERVICE }}
+          cluster: ${{ env.ECS_CLUSTER }}
+          wait-for-service-stability: true
+          wait-for-minutes: 15
+
+      - name: Check /health through CloudFront
+        if: inputs.cloudfront_url != ''
+        env:
+          CLOUDFRONT_URL: ${{ inputs.cloudfront_url }}
+        run: |
+          if ! [[ "$CLOUDFRONT_URL" =~ ^https://[a-z0-9]+\.cloudfront\.net/?$ ]]; then
+            echo "::error::cloudfront_url must look like https://<id>.cloudfront.net"
+            exit 1
+          fi
+          curl --fail --silent --show-error --retry 5 --retry-delay 5 --retry-all-errors \
+            "${CLOUDFRONT_URL%/}/health"
