@@ -8,6 +8,7 @@ authenticated interface.
 
 - **Live:** https://meridian-mcp-server-k4ki.onrender.com
 - **Dashboard:** [`meridian-dashboard`](https://github.com/ahmadmadar/meridian-dashboard) (read-only ops UI over this server, deployed separately)
+- **Infrastructure:** [`meridian-infra`](https://github.com/ahmadmadar/meridian-infra) (AWS infrastructure for deploying this server, kept in its own repo)
 
 > Built using an AI-assisted delivery workflow (Claude Code): see
 > [`docs/ai-assisted-delivery.md`](docs/ai-assisted-delivery.md) for what
